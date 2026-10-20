@@ -1,0 +1,59 @@
+services:
+  api:
+    build: .
+    image: anuc-backend:1.0
+    ports:
+      - "8000:8000"
+    environment:
+      AWS_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://localstack:4566
+      # LocalStack acepta cualquier credencial; solo existen para que boto3 no falle.
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      SQS_QUEUE_URL: http://localstack:4566/000000000000/mensajes-entrantes.fifo
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-token-local}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-secreto-local}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      localstack:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+
+  localstack:
+    image: localstack/localstack:3.8.1
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: sqs
+      AWS_DEFAULT_REGION: us-east-1
+    volumes:
+      - ./localstack/init-sqs.sh:/etc/localstack/init/ready.d/init-sqs.sh:ro
+    healthcheck:
+      # Sano solo cuando la cola ya existe.
+      test: ["CMD", "awslocal", "sqs", "get-queue-url", "--queue-name", "mensajes-entrantes.fifo"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Aún no se usa: queda lista con PostGIS y pgvector.
+  db:
+    build: ./docker/postgres
+    image: anuc-postgres:16
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: anuc_db
+      POSTGRES_USER: anuc
+      POSTGRES_PASSWORD: anuc_local
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U anuc -d anuc_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  pgdata:
