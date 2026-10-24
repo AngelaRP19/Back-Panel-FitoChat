@@ -16,6 +16,11 @@ os.environ.update(
     }
 )
 os.environ.pop("AWS_ENDPOINT_URL", None)
+# Base aparte para los tests (la crea tests/infrastructure/db/conftest.py); nunca la de desarrollo.
+os.environ["DATABASE_URL"] = os.environ.get(
+    "TEST_DATABASE_URL", "postgresql+psycopg://anuc:anuc_local@localhost:5432/anuc_test"
+)
+os.environ.setdefault("EMBEDDING_DIM", "1024")
 
 import boto3  # noqa: E402
 import pytest  # noqa: E402

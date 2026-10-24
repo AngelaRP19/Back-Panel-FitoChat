@@ -23,3 +23,28 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()  # type: ignore[call-arg]
+
+
+class DatabaseSettings(BaseSettings):
+    """Configuración de la base de datos, separada para que Alembic no exija las variables de SQS/WhatsApp."""
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    # Ej.: postgresql+psycopg://usuario:clave@host:5432/anuc_db (en RDS: añadir ?sslmode=require).
+    database_url: SecretStr
+    # Dimensión de los embeddings (pgvector). Cambiarla obliga a recalcular TODOS los vectores.
+    embedding_dim: int = 1024
+
+    @property
+    def sqlalchemy_url(self) -> str:
+        """URL con el driver psycopg 3 (sirve para el engine síncrono de Alembic y el asíncrono de la app)."""
+        url = self.database_url.get_secret_value()
+        for prefix in ("postgresql://", "postgres://"):
+            if url.startswith(prefix):
+                return "postgresql+psycopg://" + url.removeprefix(prefix)
+        return url
+
+
+@lru_cache
+def get_database_settings() -> DatabaseSettings:
+    return DatabaseSettings()  # type: ignore[call-arg]
