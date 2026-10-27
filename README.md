@@ -2,7 +2,7 @@
 
 API del panel fitosanitario y webhook del asistente de WhatsApp (FastAPI, Python 3.12) para AWS ECS Fargate. Se desarrolla módulo por módulo según `BACKEND_GUIA.md`.
 
-Estado: módulos 0b (operación y despliegue), 1b (ajustes del modelo y semillas v2) y 1c (objetos SQL) listos para revisión. Ya hay configuración, `/api/v1`, CORS, validación de JWT de Cognito, `GET /api/v1/me`, CI, el webhook que encola en SQS y la capa de datos (SQLAlchemy 2 + Alembic sobre PostgreSQL 16 con PostGIS y pgvector) con los ajustes aprobados el 26-oct-2026. Faltan los datos de demostración (1d).
+Estado: módulos 0b (operación y despliegue), 1b (ajustes del modelo y semillas v2), 1c (objetos SQL) y 1d (datos de demostración) listos para revisión. Ya hay configuración, `/api/v1`, CORS, validación de JWT de Cognito, `GET /api/v1/me`, CI, el webhook que encola en SQS y la capa de datos (SQLAlchemy 2 + Alembic sobre PostgreSQL 16 con PostGIS y pgvector) con los ajustes aprobados el 26-oct-2026. Siguen los módulos de cuentas y acceso (2) y productores, fincas y cultivos (3).
 
 ## Rutas
 
@@ -36,6 +36,7 @@ app/
 │  └─ panel_api/cuentas/         # GET /me (los demás dominios se suman por módulo)
 └─ infrastructure/
    ├─ sqs_queue_client.py
+   ├─ s3_storage_client.py       # evidencias: URLs prefirmadas y borrado de todas las versiones
    └─ db/                        # base, models/, ids.py, session.py, seed.py, procedimientos.py, cuentas_repository.py
 migrations/                      # Alembic: 0001 esquema inicial, 0002 ajustes del modelo, 0003 objetos SQL
 docs/OBJETOS_SQL.md              # vistas, funciones, procedimientos y triggers del Avance 5
@@ -111,6 +112,19 @@ curl -i -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/v1/me    # 2
 ```
 
 Si defines `COGNITO_USER_POOL_ID` y `COGNITO_APP_CLIENT_ID`, `local` valida contra el User Pool real y el comando de tokens se niega a emitir. El frontend debe enviar el **access token**, no el ID token.
+
+## Datos de demostración
+
+Para probar el panel con la API real sin WhatsApp (guía, módulo 1d). Requiere las migraciones aplicadas y el bucket de evidencias (LocalStack lo crea con versionado):
+
+```bash
+docker compose run --rm api python -m app.infrastructure.db.seed_demo             # siembra (idempotente)
+docker compose run --rm api python -m app.infrastructure.db.seed_demo --limpiar   # borrado físico, con las versiones de S3
+```
+
+Siembra 22 casos en los siete estados (identificados, ambiguos y no identificados), 9 productores con finca y cultivo en Juracambita, Centro y San Luis, un líder, tres técnicos (uno es la cuenta de técnico del líder), una alerta `GENERADA` de Trips con 4 casos confirmados y otra `COMUNICADA` para probar la corrección. Las fotos son imágenes sintéticas WebP en `evidencias/<año>/<mes>/<id>.webp`.
+
+Todo es reconocible: nombres con sufijo «(demo)», celulares `3000000xxx` y correos `@demo.anuc.test`. En `local` y `test` las cuentas quedan enlazadas a un `cognito_sub` fijo (`demo-<id>`), así que `python -m app.core.tokens_prueba demo-LID-000001` emite un token válido; en `prod` el comando exige `--permitir-demo` y deja el `cognito_sub` vacío para que lo enlace el usuario. Las 3 preguntas del cuestionario también son de demostración: el texto real sigue pendiente (P-B10).
 
 ## Tests, lint y tipos
 
