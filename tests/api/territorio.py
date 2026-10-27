@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 from app.core.catalogos_api import CATEGORIAS, ESPECIES
 from app.infrastructure.db import procedimientos as sp
 from app.infrastructure.db.models import (
+    Alerta,
+    AlertaCaso,
     Caso,
     CoincidenciaCategoria,
     Diagnostico,
@@ -209,3 +211,36 @@ def registrar_diagnostico(
             },
         )
         sesion.commit()
+
+
+def crear_alerta(
+    motor: Engine,
+    casos: list[str],
+    estado: str = "GENERADA",
+    categoria: str = "TRIPS",
+    km: float = 3.5,
+    minimo: int = 3,
+    dias: int = 30,
+    **extra: Any,
+) -> str:
+    """Alerta con sus casos de origen y los parámetros con que se generó (sin pasar por `sp_evaluar_alerta`)."""
+    with Session(motor) as sesion:
+        id_categoria = sesion.scalar(
+            text("SELECT id_categoria FROM categorias_fitosanitarias WHERE nombre_categoria = :n"),
+            {"n": CATEGORIAS.a_nombre(categoria)},
+        )
+        alerta = Alerta(
+            id_categoria=id_categoria,
+            estado_alerta=estado,
+            fecha_generacion_alerta=datetime.now(UTC),
+            numero_minimo_casos=minimo,
+            distancia_km=Decimal(str(km)),
+            intervalo_dias=dias,
+            **extra,
+        )
+        sesion.add(alerta)
+        sesion.flush()
+        for id_caso in casos:
+            sesion.add(AlertaCaso(id_alerta=alerta.id_alerta, id_caso=id_caso))
+        sesion.commit()
+        return alerta.id_alerta

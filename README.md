@@ -2,7 +2,7 @@
 
 API del panel fitosanitario y webhook del asistente de WhatsApp (FastAPI, Python 3.12) para AWS ECS Fargate. Se desarrolla módulo por módulo según `BACKEND_GUIA.md`.
 
-Estado: módulos 0b (operación y despliegue), 1b (ajustes del modelo y semillas v2), 1c (objetos SQL), 1d (datos de demostración), 2 (cuentas y acceso) y 3 (productores, fincas y cultivos) 4 (casos: bandeja y detalle) y 5 (diagnóstico y cierre) listos para revisión. Ya hay configuración, `/api/v1`, CORS, validación de JWT de Cognito, `GET /api/v1/me`, CI, el webhook que encola en SQS y la capa de datos (SQLAlchemy 2 + Alembic sobre PostgreSQL 16 con PostGIS y pgvector) con los ajustes aprobados el 26-oct-2026. Sigue el módulo 6: alertas del panel.
+Estado: módulos 0b (operación y despliegue), 1b (ajustes del modelo y semillas v2), 1c (objetos SQL), 1d (datos de demostración), 2 (cuentas y acceso) y 3 (productores, fincas y cultivos) 4 (casos: bandeja y detalle) 5 (diagnóstico y cierre) y 6 (alertas del panel) listos para revisión. Ya hay configuración, `/api/v1`, CORS, validación de JWT de Cognito, `GET /api/v1/me`, CI, el webhook que encola en SQS y la capa de datos (SQLAlchemy 2 + Alembic sobre PostgreSQL 16 con PostGIS y pgvector) con los ajustes aprobados el 26-oct-2026. Sigue el módulo 7: resumen e inicio (Fase B).
 
 ## Rutas
 
@@ -27,6 +27,10 @@ Estado: módulos 0b (operación y despliegue), 1b (ajustes del modelo y semillas
 | `GET /api/v1/resumen/navegacion` | Bearer (líder o técnico) | `{pendientes, alertas_generadas}` para el Sidebar; el técnico ve solo lo suyo. |
 | `POST /api/v1/casos/{id}/diagnostico` | Bearer, solo técnico | Completa el diagnóstico (En revisión → Registrado, `sp_registrar_diagnostico`). Solo el técnico de la asignación vigente: el líder recibe `403` y otro técnico `404`. `CONFIRMADO` solo si la identificación fue preliminar; `OTRA_PATOLOGIA` exige categoría; `REQUIERE_VISITA`, el motivo. Una categoría transmisible evalúa las alertas en la misma transacción. |
 | `POST /api/v1/casos/{id}/cierre` | Bearer (líder o técnico asignado) | Registrado → Cerrado (`sp_cerrar_caso`); `vence_en` = cierre + `MESES_CONSERVACION` (6). Sin reapertura: un caso cerrado responde `409 TRANSICION_INVALIDA`. |
+| `GET /api/v1/alertas`, `GET /api/v1/alertas/{id}`, `GET /api/v1/alertas/parametros` | Bearer (líder o técnico) | Alertas con `conteos` por estado, casos que las originan (el técnico solo abre los suyos) y parámetros por categoría. |
+| `POST /api/v1/alertas/{id}/confirmar` y `/descartar`, `PUT .../borrador`, `GET .../destinatarios`, `PUT /api/v1/alertas/parametros/{categoria}` | Bearer, solo líder técnico | GENERADA o EN_REVISION → CONFIRMADA o DESCARTADA (con justificación). Destinatarios: productores activos dentro del radio de la alerta, por vereda. El mensaje (máx. 300) no puede recomendar productos, dosis ni tratamientos. |
+| `POST /api/v1/alertas/{id}/comunicar` y `/corregir` | Bearer, solo líder técnico | Envían por WhatsApp (simulado hasta la Fase C: estado `SIMULADO`) en lotes, con el resultado por destinatario. Reanudables y sin duplicados. Corregir: solo desde COMUNICADA, una vez, a quienes recibieron la alerta. |
+| `POST/DELETE /api/v1/alertas/{id}/seguir` | Bearer, solo técnico | «Avisarme cuando cambie» (P-06; el aviso aún no existe). |
 | `GET /docs`, `/openapi.json` | — | Solo fuera de `prod`. |
 
 Errores con un solo formato, sin envoltorio: `{"codigo": "...", "mensaje": "...", "campos": {...}}`. Todas las respuestas llevan `X-Request-Id`, cabeceras de seguridad y `Cache-Control: no-store`. El cuerpo de una solicitud no puede superar `MAX_BODY_BYTES` (10 MB; `413` si lo supera).
