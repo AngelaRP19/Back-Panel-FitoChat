@@ -11,3 +11,4 @@ pgvector==0.3.6
 argon2-cffi==23.1.0
 PyJWT[crypto]==2.10.1
 cryptography==50.0.2
+Pillow==11.0.0
