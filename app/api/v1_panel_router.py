@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter
 
+from app.modules.panel_api.alertas.router import router as alertas_router
 from app.modules.panel_api.casos.router import router as casos_router
 from app.modules.panel_api.consulta.router import router as consulta_router
 from app.modules.panel_api.cuentas.router import router as cuentas_router
@@ -22,3 +23,4 @@ router.include_router(catalogos_router)
 router.include_router(consulta_router)
 router.include_router(casos_router)
 router.include_router(resumen_router)
+router.include_router(alertas_router)
