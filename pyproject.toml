@@ -1,16 +1,45 @@
 [project]
 name = "anuc-backend"
-version = "0.1.0"
+version = "0.2.0"
 requires-python = ">=3.12"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
 
+[tool.coverage.run]
+source = ["app"]
+# SQLAlchemy async ejecuta el código de acceso a datos dentro de greenlets: sin esto no se mide.
+concurrency = ["greenlet", "thread"]
+
 [tool.ruff]
 line-length = 120
 target-version = "py312"
+extend-exclude = [".venv", ".local"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tablas de datos y SQL en una línea: más legibles anchas que partidas.
+"app/infrastructure/db/seed_demo.py" = ["E501"]
+# Las aserciones largas se leen mejor enteras.
+"tests/**" = ["E501"]
+# Los textos del chatbot son frases completas para el productor: se leen mejor enteras.
+"app/modules/orchestrator/textos.py" = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "tests"]
 
 [tool.mypy]
 python_version = "3.12"
+plugins = ["pydantic.mypy"]
+warn_unused_configs = true
+# Estricto en core y modules (guía §3); el resto, sin errores pero sin exigir anotaciones completas.
+[[tool.mypy.overrides]]
+module = ["app.core.*", "app.modules.*"]
 strict = true
+
+[[tool.mypy.overrides]]
+module = ["geoalchemy2.*", "pgvector.*", "moto.*", "boto3.*", "botocore.*", "reportlab.*"]
+ignore_missing_imports = true

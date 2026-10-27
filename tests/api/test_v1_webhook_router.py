@@ -49,7 +49,9 @@ def test_verificacion_token_incorrecto_403(client: TestClient) -> None:
 
 
 def test_verificacion_modo_incorrecto_403(client: TestClient) -> None:
-    response = client.get(URL, params={"hub.mode": "unsubscribe", "hub.verify_token": VERIFY_TOKEN, "hub.challenge": "x"})
+    response = client.get(
+        URL, params={"hub.mode": "unsubscribe", "hub.verify_token": VERIFY_TOKEN, "hub.challenge": "x"}
+    )
     assert response.status_code == 403
 
 
