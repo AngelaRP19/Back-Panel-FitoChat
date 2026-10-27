@@ -2,7 +2,7 @@
 
 API del panel fitosanitario y webhook del asistente de WhatsApp (FastAPI, Python 3.12) para AWS ECS Fargate. Se desarrolla módulo por módulo según `BACKEND_GUIA.md`.
 
-Estado: módulos 0b (operación y despliegue), 1b (ajustes del modelo y semillas v2), 1c (objetos SQL), 1d (datos de demostración), 2 (cuentas y acceso) y 3 (productores, fincas y cultivos) 4 (casos: bandeja y detalle) 5 (diagnóstico y cierre) 6 (alertas del panel) y 7 (resumen e inicio) listos para revisión. Ya hay configuración, `/api/v1`, CORS, validación de JWT de Cognito, `GET /api/v1/me`, CI, el webhook que encola en SQS y la capa de datos (SQLAlchemy 2 + Alembic sobre PostgreSQL 16 con PostGIS y pgvector) con los ajustes aprobados el 26-oct-2026. Sigue el módulo 8: jobs programados.
+Estado: módulos 0b (operación y despliegue), 1b (ajustes del modelo y semillas v2), 1c (objetos SQL), 1d (datos de demostración), 2 (cuentas y acceso) y 3 (productores, fincas y cultivos) 4 (casos: bandeja y detalle) 5 (diagnóstico y cierre) 6 (alertas del panel) 7 (resumen e inicio) y 8 (jobs programados) listos para revisión. Ya hay configuración, `/api/v1`, CORS, validación de JWT de Cognito, `GET /api/v1/me`, CI, el webhook que encola en SQS y la capa de datos (SQLAlchemy 2 + Alembic sobre PostgreSQL 16 con PostGIS y pgvector) con los ajustes aprobados el 26-oct-2026. Sigue el módulo 9: consumidor de la cola (Fase C).
 
 ## Rutas
 
@@ -150,6 +150,19 @@ docker compose run --rm api python -m app.infrastructure.db.seed_demo --limpiar 
 Siembra 22 casos en los siete estados (identificados, ambiguos y no identificados), 9 productores con finca y cultivo en Juracambita, Centro y San Luis, un líder, tres técnicos (uno es la cuenta de técnico del líder), una alerta `GENERADA` de Trips con 4 casos confirmados y otra `COMUNICADA` para probar la corrección. Las fotos son imágenes sintéticas WebP en `evidencias/<año>/<mes>/<id>.webp`.
 
 Todo es reconocible: nombres con sufijo «(demo)», celulares `3000000xxx` y correos `@demo.anuc.test`. En `local` y `test` las cuentas quedan enlazadas a un `cognito_sub` fijo (`demo-<id>`), así que `python -m app.core.tokens_prueba demo-LID-000001` emite un token válido; en `prod` el comando exige `--permitir-demo` y deja el `cognito_sub` vacío para que lo enlace el usuario. Las 3 preguntas del cuestionario también son de demostración: el texto real sigue pendiente (P-B10).
+
+## Jobs programados
+
+Se ejecutan con `python -m app.jobs.run <nombre>` (en AWS, EventBridge Scheduler los lanza como tareas ECS con la misma imagen). Cada uno es idempotente, corre con candado (dos ejecuciones del mismo job no se pisan) y trata cada caso en su propia transacción.
+
+| Job | Frecuencia sugerida | Qué hace |
+|---|---|---|
+| `advertencia_inactividad` | cada 15 min | Casos del chatbot (Caso creado / En análisis) con 48 h sin actividad: avisa por WhatsApp (simulado hasta la Fase C) y los marca como avisados. |
+| `descarte_inactividad` | cada 15 min | Casos del chatbot con 72 h sin actividad: descarte con borrado físico de datos y fotos (todas las versiones en S3) y auditoría sin datos personales. |
+| `retencion` | diario | Casos Cerrados cuyo `vence_en` ya llegó (hora de Colombia): borrado físico total. |
+| `evaluar_alertas` | diario | Barrido de respaldo de `sp_evaluar_alerta` para las categorías transmisibles. |
+
+Código de salida: `0` bien (o se omitió porque otra ejecución seguía corriendo), `1` hubo errores (revisar los logs), `2` comando o configuración incorrectos (falta `S3_BUCKET_EVIDENCIAS`, WhatsApp no disponible…). Si borrar en S3 falla, no se borra la fila: el siguiente ciclo lo reintenta. Los textos de los avisos son provisionales hasta que el equipo los valide.
 
 ## Tests, lint y tipos
 
