@@ -27,9 +27,9 @@ def _columnas(motor: Engine, tabla: str) -> dict[str, dict]:  # type: ignore[typ
     return {c["name"]: c for c in inspect(motor).get_columns(tabla)}
 
 
-def test_la_revision_actual_es_0002(migrated: Engine) -> None:
+def test_la_revision_actual_es_la_ultima(migrated: Engine) -> None:
     with migrated.connect() as conn:
-        assert conn.scalar(text("SELECT version_num FROM alembic_version")) == "0002"
+        assert conn.scalar(text("SELECT version_num FROM alembic_version")) == "0003"
 
 
 def test_bajar_a_0001_quita_solo_lo_de_0002(en_0001: Engine) -> None:
