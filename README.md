@@ -2,7 +2,7 @@
 
 API del panel fitosanitario y webhook del asistente de WhatsApp (FastAPI, Python 3.12) para AWS ECS Fargate. Se desarrolla módulo por módulo según `BACKEND_GUIA.md`.
 
-Estado: módulos 0b (operación y despliegue) y 1b (ajustes del modelo y semillas v2) listos para revisión. Ya hay configuración, `/api/v1`, CORS, validación de JWT de Cognito, `GET /api/v1/me`, CI, el webhook que encola en SQS y la capa de datos (SQLAlchemy 2 + Alembic sobre PostgreSQL 16 con PostGIS y pgvector) con los ajustes aprobados el 26-oct-2026. Falta el modelo SQL de la §6.6 (módulo 1c) y los datos de demostración (1d).
+Estado: módulos 0b (operación y despliegue), 1b (ajustes del modelo y semillas v2) y 1c (objetos SQL) listos para revisión. Ya hay configuración, `/api/v1`, CORS, validación de JWT de Cognito, `GET /api/v1/me`, CI, el webhook que encola en SQS y la capa de datos (SQLAlchemy 2 + Alembic sobre PostgreSQL 16 con PostGIS y pgvector) con los ajustes aprobados el 26-oct-2026. Faltan los datos de demostración (1d).
 
 ## Rutas
 
@@ -36,8 +36,9 @@ app/
 │  └─ panel_api/cuentas/         # GET /me (los demás dominios se suman por módulo)
 └─ infrastructure/
    ├─ sqs_queue_client.py
-   └─ db/                        # base, models/, ids.py, session.py, seed.py, cuentas_repository.py
-migrations/                      # Alembic: 0001 esquema inicial, 0002 ajustes del modelo
+   └─ db/                        # base, models/, ids.py, session.py, seed.py, procedimientos.py, cuentas_repository.py
+migrations/                      # Alembic: 0001 esquema inicial, 0002 ajustes del modelo, 0003 objetos SQL
+docs/OBJETOS_SQL.md              # vistas, funciones, procedimientos y triggers del Avance 5
 docs/CAMBIOS_MODELO.md           # cambios aprobados al modelo, para actualizar los Anexos 2 y 3
 tests/                           # espejo de app/
 docker/postgres/                 # imagen con PostGIS + pgvector
@@ -127,6 +128,7 @@ Los tests de base de datos y de `/me` usan una base aparte, `anuc_test`, que cre
 
 - **Migraciones y semillas:** `alembic upgrade head` y `python -m app.infrastructure.db.seed`. Con `alembic upgrade head --sql` se revisa el SQL sin conectarse. Cada cambio al modelo se anota en `docs/CAMBIOS_MODELO.md`.
 - **Semillas v2:** 7 estados del caso, 5 categorías (solo Trips es transmisible), 3 especies (gulupa, granadilla, maracuyá) y un único parámetro epidemiológico, el de Trips (3,5 km, 30 días). El número mínimo de casos (3) es **provisional** hasta que el equipo lo defina (P-B02). No se siembran las preguntas del cuestionario: su texto no está en los documentos (P-B10). La semilla es idempotente y se niega a correr si encuentra la semilla genérica anterior; en ese caso recrea la base local con `docker compose down -v`.
+- **Objetos SQL:** las 6 vistas, 2 funciones, 6 procedimientos y 6 triggers de la §6.6 (migración `0003`). Los errores de negocio llevan un SQLSTATE propio (`AN001` a `AN005`) y `app/infrastructure/db/procedimientos.py` trae las sentencias de llamada. Detalle y reglas de la evaluación de alertas en `docs/OBJETOS_SQL.md`.
 - **Códigos de la API:** `app/core/catalogos_api.py` mapea los nombres guardados («Pendiente de revisión») con los códigos estables (`PENDIENTE_REVISION`). Un código desconocido en la entrada se rechaza; un nombre desconocido en la salida se normaliza y no rompe la respuesta. Los ids de catálogo (`ES003`, `CF004`) nunca van en el código.
 - **Ids:** los genera la aplicación con una secuencia por tabla y `fn_generar_id`. Los prefijos están en `PREFIJOS_ID` (`app/infrastructure/db/ids.py`): `CF001` (catálogos de 5), `PRO-000001` (10), `CAS-00000001` (12). La sesión los asigna al hacer `flush`.
 - **Ubicación:** `fincas.ubicacion` y `cultivos.ubicacion` son `geometry(Point, 4326)` generadas a partir de longitud y latitud, con índice GiST. No se escriben.

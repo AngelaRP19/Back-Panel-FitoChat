@@ -15,6 +15,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_database_settings
+from app.infrastructure.db.ids import PREFIJOS_ID, nombre_secuencia
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -60,11 +61,21 @@ def migrated(engine: Engine) -> Engine:
     return engine
 
 
+def _reiniciar_secuencias_cortas(connection: Connection) -> None:
+    """Las secuencias de catálogo tienen 3 dígitos (ES001..ES999) y nextval no se revierte con el rollback: tras unos
+    cientos de pruebas se agotarían. ALTER SEQUENCE ... RESTART sí es transaccional, así que cada prueba arranca en 1
+    y al revertirse la transacción la secuencia vuelve a su valor."""
+    for tabla, spec in PREFIJOS_ID.items():
+        if spec.digitos <= 3:
+            connection.execute(text(f"ALTER SEQUENCE {nombre_secuencia(tabla)} RESTART WITH 1"))
+
+
 @pytest.fixture
 def conn(migrated: Engine) -> Iterator[Connection]:
     """Conexión con transacción que se revierte al final: cada test deja la base limpia."""
     with migrated.connect() as connection:
         transaction = connection.begin()
+        _reiniciar_secuencias_cortas(connection)
         yield connection
         transaction.rollback()
 
