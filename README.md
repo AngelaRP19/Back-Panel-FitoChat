@@ -2,7 +2,7 @@
 
 API del panel fitosanitario y webhook del asistente de WhatsApp (FastAPI, Python 3.12) para AWS ECS Fargate. Se desarrolla módulo por módulo según `BACKEND_GUIA.md`.
 
-Estado: módulos 0b (operación y despliegue), 1b (ajustes del modelo y semillas v2), 1c (objetos SQL) y 1d (datos de demostración) listos para revisión. Ya hay configuración, `/api/v1`, CORS, validación de JWT de Cognito, `GET /api/v1/me`, CI, el webhook que encola en SQS y la capa de datos (SQLAlchemy 2 + Alembic sobre PostgreSQL 16 con PostGIS y pgvector) con los ajustes aprobados el 26-oct-2026. Siguen los módulos de cuentas y acceso (2) y productores, fincas y cultivos (3).
+Estado: módulos 0b (operación y despliegue), 1b (ajustes del modelo y semillas v2), 1c (objetos SQL), 1d (datos de demostración) y 2 (cuentas y acceso) listos para revisión. Ya hay configuración, `/api/v1`, CORS, validación de JWT de Cognito, `GET /api/v1/me`, CI, el webhook que encola en SQS y la capa de datos (SQLAlchemy 2 + Alembic sobre PostgreSQL 16 con PostGIS y pgvector) con los ajustes aprobados el 26-oct-2026. Sigue el módulo de productores, fincas y cultivos (3).
 
 ## Rutas
 
@@ -12,6 +12,11 @@ Estado: módulos 0b (operación y despliegue), 1b (ajustes del modelo y semillas
 | `GET /webhook/whatsapp` | token de verificación | Registro del webhook en Meta: devuelve `hub.challenge` si el token coincide; si no, `403`. |
 | `POST /webhook/whatsapp` | firma HMAC | Valida `X-Hub-Signature-256` (`401` si falla), encola en SQS y responde `200`. Si SQS falla, `500` para que Meta reintente. |
 | `GET /api/v1/me` | Bearer (access token de Cognito) | Cuenta de la sesión `{id, nombre, correo, celular, rol, activo}`. Es la fuente del rol. |
+| `GET /api/v1/auth/estado` | pública | `{hay_lider}`: el frontend decide si muestra el registro del primer líder. |
+| `POST /api/v1/auth/primer-lider` | pública (solo funciona sin líderes) | Crea el primer líder en Cognito y en la base. `201 {id}`; `409 YA_EXISTE_LIDER` si ya hay uno. |
+| `POST /api/v1/auth/recuperacion/verificar-correo` | pública, 5 por minuto por IP | `{existe}`; `429` con `Retry-After` al excederse. |
+| `PATCH /api/v1/me`, `POST /api/v1/me/contrasena` | Bearer | Editar nombre y celular (el correo no se cambia) y cambiar la contraseña (`204`). |
+| `GET/POST /api/v1/tecnicos`, `GET/PATCH /api/v1/tecnicos/{id}`, `PATCH /api/v1/tecnicos/{id}/estado` | Bearer, solo líder técnico | Administración de cuentas de líderes y técnicos. `GET` admite `q`, `rol`, `activo`, `carga`, `page`, `page_size` y `con_carga=true` (lista para asignar casos). `409 ULTIMA_CUENTA_ACTIVA` si se intenta deshabilitar la última cuenta activa de un rol. |
 | `GET /docs`, `/openapi.json` | — | Solo fuera de `prod`. |
 
 Errores con un solo formato, sin envoltorio: `{"codigo": "...", "mensaje": "...", "campos": {...}}`. Todas las respuestas llevan `X-Request-Id`, cabeceras de seguridad y `Cache-Control: no-store`. El cuerpo de una solicitud no puede superar `MAX_BODY_BYTES` (10 MB; `413` si lo supera).
@@ -112,6 +117,10 @@ curl -i -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/v1/me    # 2
 ```
 
 Si defines `COGNITO_USER_POOL_ID` y `COGNITO_APP_CLIENT_ID`, `local` valida contra el User Pool real y el comando de tokens se niega a emitir. El frontend debe enviar el **access token**, no el ID token.
+
+### Cuentas y Cognito
+
+Sin User Pool configurado, las altas, ediciones y deshabilitaciones de cuentas usan un Cognito simulado en memoria (útil en `local` y en pruebas). Con User Pool real se usa boto3; el rol de la tarea de ECS necesita `cognito-idp:AdminCreateUser`, `AdminDeleteUser` (compensación si falla la base de datos), `AdminDisableUser`, `AdminEnableUser`, `AdminGetUser`, `AdminUpdateUserAttributes` y `AdminSetUserPassword`. `ChangePassword` usa el access token de la persona y no necesita permiso IAM. Los técnicos nuevos reciben la contraseña temporal por correo desde Cognito; el backend nunca la conoce. El límite de intentos de `verificar-correo` es por proceso (por tarea de ECS).
 
 ## Datos de demostración
 

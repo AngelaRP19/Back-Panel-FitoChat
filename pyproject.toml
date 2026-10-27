@@ -23,6 +23,8 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.ruff.lint.per-file-ignores]
 # Tablas de datos y SQL en una línea: más legibles anchas que partidas.
 "app/infrastructure/db/seed_demo.py" = ["E501"]
+# Las aserciones largas se leen mejor enteras.
+"tests/**" = ["E501"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app", "tests"]
