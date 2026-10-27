@@ -52,7 +52,7 @@ def _insertar_por_nombre(
     columnas = list(filas[0])
     sql = text(
         f"INSERT INTO {tabla} ({id_col}, {', '.join(columnas)}) "
-        f"SELECT {_id_sql(tabla)}, {', '.join(':' + c for c in columnas)} "
+        f"SELECT {_id_sql(tabla)}, {', '.join(f'CAST(:{c} AS varchar)' for c in columnas)} "
         f"WHERE NOT EXISTS (SELECT 1 FROM {tabla} WHERE {nombre_col} = :{nombre_col}) "
         "ON CONFLICT DO NOTHING"
     )
@@ -85,7 +85,8 @@ def seed(conn: Connection) -> dict[str, int]:
             "INSERT INTO parametros_epidemiologicos "
             "(id_parametro, id_categoria, numero_minimo_casos, distancia_km, intervalo_dias, fecha_actualizacion) "
             f"SELECT {_id_sql('parametros_epidemiologicos')}, c.id_categoria, "
-            ":numero_minimo_casos, :distancia_km, :intervalo_dias, now() "
+            "CAST(:numero_minimo_casos AS integer), CAST(:distancia_km AS numeric), "
+            "CAST(:intervalo_dias AS integer), now() "
             "FROM categorias_fitosanitarias c "
             "WHERE c.es_transmisible = 'S' AND NOT EXISTS "
             "(SELECT 1 FROM parametros_epidemiologicos p WHERE p.id_categoria = c.id_categoria) "

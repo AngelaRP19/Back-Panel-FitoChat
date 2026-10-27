@@ -61,6 +61,10 @@ def _ts(name: str, nullable: bool = False) -> sa.Column:  # type: ignore[type-ar
     return sa.Column(name, sa.DateTime(timezone=True), nullable=nullable)
 
 
+# Los CHECK llevan el nombre corto: la convención de nombres del MetaData (ck_<tabla>_<nombre>) se aplica
+# también en las operaciones de Alembic, así que un nombre completo quedaría con el prefijo duplicado.
+
+
 def upgrade() -> None:
     # 1. Extensiones (en RDS requieren el rol rds_superuser, que tiene el usuario maestro).
     op.execute("CREATE EXTENSION IF NOT EXISTS postgis")
@@ -79,7 +83,7 @@ def upgrade() -> None:
         sa.Column("es_transmisible", sa.String(1), nullable=False),
         sa.PrimaryKeyConstraint("id_categoria", name="pk_categorias"),
         sa.UniqueConstraint("nombre_categoria", name="uq_cat_nombre"),
-        sa.CheckConstraint("es_transmisible IN ('S', 'N')", name="ck_categorias_fitosanitarias_es_transmisible_sn"),
+        sa.CheckConstraint("es_transmisible IN ('S', 'N')", name="es_transmisible_sn"),
     )
     op.create_table(
         "estados",
@@ -156,7 +160,7 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(["id_categoria"], ["categorias_fitosanitarias.id_categoria"], name="fk_coi_categoria"),
         sa.CheckConstraint(
-            "porcentaje_coincidencia BETWEEN 0 AND 100", name="ck_coincidencias_categoria_porcentaje_rango"
+            "porcentaje_coincidencia BETWEEN 0 AND 100", name="porcentaje_rango"
         ),
     )
     op.create_table(
@@ -180,7 +184,7 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(["id_estado"], ["estados.id_estado"], name="fk_cas_estado"),
         sa.CheckConstraint(
-            "advertencia_inactividad_enviada IN ('S', 'N')", name="ck_casos_advertencia_inactividad_enviada_sn"
+            "advertencia_inactividad_enviada IN ('S', 'N')", name="advertencia_inactividad_enviada_sn"
         ),
     )
     op.create_table(
@@ -281,9 +285,9 @@ def upgrade() -> None:
         sa.UniqueConstraint("id_categoria", name="uq_par_categoria"),
         sa.ForeignKeyConstraint(["id_categoria"], ["categorias_fitosanitarias.id_categoria"], name="fk_par_categoria"),
         sa.CheckConstraint(
-            "numero_minimo_casos BETWEEN 1 AND 999", name="ck_parametros_epidemiologicos_numero_minimo_casos_rango"
+            "numero_minimo_casos BETWEEN 1 AND 999", name="numero_minimo_casos_rango"
         ),
-        sa.CheckConstraint("intervalo_dias BETWEEN 1 AND 999", name="ck_parametros_epidemiologicos_intervalo_dias_rango"),
+        sa.CheckConstraint("intervalo_dias BETWEEN 1 AND 999", name="intervalo_dias_rango"),
     )
     op.create_table(
         "alertas",

@@ -61,8 +61,9 @@ def test_un_parametro_por_categoria(session: Session) -> None:
     session.flush()
 
     def parametro() -> ParametroEpidemiologico:
+        # Por id_categoria y no por la relación: la relación 1:1 desasociaría el primer parámetro.
         return ParametroEpidemiologico(
-            categoria=cat,
+            id_categoria=cat.id_categoria,
             numero_minimo_casos=3,
             distancia_km=Decimal("3.5"),
             intervalo_dias=30,
