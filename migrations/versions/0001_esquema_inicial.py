@@ -159,9 +159,7 @@ def upgrade() -> None:
             ["id_identificacion"], ["identificacion_preliminar.id_identificacion"], name="fk_coi_identificacion"
         ),
         sa.ForeignKeyConstraint(["id_categoria"], ["categorias_fitosanitarias.id_categoria"], name="fk_coi_categoria"),
-        sa.CheckConstraint(
-            "porcentaje_coincidencia BETWEEN 0 AND 100", name="porcentaje_rango"
-        ),
+        sa.CheckConstraint("porcentaje_coincidencia BETWEEN 0 AND 100", name="porcentaje_rango"),
     )
     op.create_table(
         "casos",
@@ -183,9 +181,7 @@ def upgrade() -> None:
             ["id_identificacion_preliminar"], ["identificacion_preliminar.id_identificacion"], name="fk_cas_iden"
         ),
         sa.ForeignKeyConstraint(["id_estado"], ["estados.id_estado"], name="fk_cas_estado"),
-        sa.CheckConstraint(
-            "advertencia_inactividad_enviada IN ('S', 'N')", name="advertencia_inactividad_enviada_sn"
-        ),
+        sa.CheckConstraint("advertencia_inactividad_enviada IN ('S', 'N')", name="advertencia_inactividad_enviada_sn"),
     )
     op.create_table(
         "eventos",
@@ -284,9 +280,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id_parametro", name="pk_parametros"),
         sa.UniqueConstraint("id_categoria", name="uq_par_categoria"),
         sa.ForeignKeyConstraint(["id_categoria"], ["categorias_fitosanitarias.id_categoria"], name="fk_par_categoria"),
-        sa.CheckConstraint(
-            "numero_minimo_casos BETWEEN 1 AND 999", name="numero_minimo_casos_rango"
-        ),
+        sa.CheckConstraint("numero_minimo_casos BETWEEN 1 AND 999", name="numero_minimo_casos_rango"),
         sa.CheckConstraint("intervalo_dias BETWEEN 1 AND 999", name="intervalo_dias_rango"),
     )
     op.create_table(
