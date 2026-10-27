@@ -3,7 +3,7 @@ from sqlalchemy import Engine, inspect, text
 
 from app.infrastructure.db.base import Base
 from app.infrastructure.db.ids import PREFIJOS_ID, nombre_secuencia
-from tests.infrastructure.db.conftest import alembic_config
+from tests.db_fixtures import alembic_config
 
 TABLAS = set(Base.metadata.tables)
 
@@ -57,7 +57,9 @@ def test_extensiones_instaladas(migrated: Engine) -> None:
 
 def test_nombres_de_restricciones_del_modelo(migrated: Engine) -> None:
     with migrated.connect() as conn:
-        nombres = set(conn.scalars(text("SELECT conname FROM pg_constraint WHERE connamespace = 'public'::regnamespace")))
+        nombres = set(
+            conn.scalars(text("SELECT conname FROM pg_constraint WHERE connamespace = 'public'::regnamespace"))
+        )
     assert RESTRICCIONES_DEL_MODELO - nombres == set()
 
 

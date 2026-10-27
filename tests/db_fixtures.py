@@ -1,4 +1,4 @@
-"""Fixtures contra el Postgres del docker-compose (PostGIS + pgvector).
+"""Fixtures contra el Postgres del docker-compose (PostGIS + pgvector). Las importa tests/conftest.py.
 
 Usan la base anuc_test (se crea si no existe). Si el Postgres no está levantado, estos tests se
 omiten en lugar de fallar, para que el resto de la suite corra sin Docker.
@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_database_settings
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def alembic_config(connection: Connection) -> Config:

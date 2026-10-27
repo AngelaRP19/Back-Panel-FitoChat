@@ -88,7 +88,12 @@ def test_es_transmisible_solo_s_o_n(session: Session) -> None:
 
 def test_advertencia_inactividad_solo_s_o_n(session: Session) -> None:
     datos = escenario(session)
-    caso = _caso(datos.especie.id_especie, datos.cultivo.id_cultivo, datos.estado.id_estado, datos.identificacion.id_identificacion)
+    caso = _caso(
+        datos.especie.id_especie,
+        datos.cultivo.id_cultivo,
+        datos.estado.id_estado,
+        datos.identificacion.id_identificacion,
+    )
     session.add(caso)
     session.flush()
     _viola(
@@ -141,9 +146,7 @@ def test_parametros_enteros_al_menos_1(session: Session, campo: str, constraint:
         session,
         constraint,
         lambda: session.add(
-            ParametroEpidemiologico(
-                categoria=cat, distancia_km=Decimal("3.5"), fecha_actualizacion=ahora(), **valores
-            )
+            ParametroEpidemiologico(categoria=cat, distancia_km=Decimal("3.5"), fecha_actualizacion=ahora(), **valores)
         ),
     )
 
@@ -163,7 +166,12 @@ def _caso(datos_especie_id: str, cultivo_id: str, estado_id: str, identificacion
 
 def test_caso_con_par_cultivo_especie_valido(session: Session) -> None:
     datos = escenario(session)
-    caso = _caso(datos.especie.id_especie, datos.cultivo.id_cultivo, datos.estado.id_estado, datos.identificacion.id_identificacion)
+    caso = _caso(
+        datos.especie.id_especie,
+        datos.cultivo.id_cultivo,
+        datos.estado.id_estado,
+        datos.identificacion.id_identificacion,
+    )
     session.add(caso)
     session.flush()
     assert caso.advertencia_inactividad_enviada == "N"  # server_default
@@ -174,6 +182,9 @@ def test_caso_con_especie_no_asociada_al_cultivo_falla(session: Session) -> None
     """La especie existe y el cultivo existe, pero el PAR no está en cultivo_especie."""
     datos = escenario(session)
     caso = _caso(
-        datos.otra_especie.id_especie, datos.cultivo.id_cultivo, datos.estado.id_estado, datos.identificacion.id_identificacion
+        datos.otra_especie.id_especie,
+        datos.cultivo.id_cultivo,
+        datos.estado.id_estado,
+        datos.identificacion.id_identificacion,
     )
     _viola(session, "fk_cas_cul_esp", lambda: session.add(caso))

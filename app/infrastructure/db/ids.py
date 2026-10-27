@@ -28,7 +28,7 @@ class IdSpec:
 
     @property
     def valor_maximo(self) -> int:
-        return 10**self.digitos - 1
+        return int(10**self.digitos) - 1
 
     def formatear(self, numero: int) -> str:
         if not 1 <= numero <= self.valor_maximo:
@@ -84,7 +84,7 @@ def _asignar_ids(session: Session, _flush_context: Any, _instances: Any) -> None
     """Asigna el id a los objetos nuevos que no lo traen. Funciona también con AsyncSession."""
     for obj in session.new:
         mapper = inspect(obj).mapper
-        tabla = mapper.local_table.name  # type: ignore[attr-defined]
+        tabla = mapper.local_table.name
         if tabla not in PREFIJOS_ID or len(mapper.primary_key) != 1:
             continue
         atributo = mapper.get_property_by_column(mapper.primary_key[0]).key
