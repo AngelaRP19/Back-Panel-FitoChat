@@ -159,3 +159,12 @@ class CognitoQueFalla(CognitoSimulado):
     def cambiar_contrasena(self, access_token: str, actual: str, nueva: str) -> None:
         self._revisar("cambiar_contrasena")
         super().cambiar_contrasena(access_token, actual, nueva)
+
+
+@pytest.fixture
+def catalogos(api: TestClient, migrated: Engine) -> None:
+    """Estados, categorías y especies reales (la API empieza cada prueba con las tablas vacías)."""
+    from app.infrastructure.db.seed import seed
+
+    with migrated.begin() as conexion:
+        seed(conexion)
