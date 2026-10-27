@@ -47,6 +47,7 @@ services:
       AWS_SECRET_ACCESS_KEY: test
       SQS_QUEUE_URL: http://localstack:4566/000000000000/mensajes-entrantes.fifo
       S3_BUCKET_EVIDENCIAS: anuc-evidencias
+      DYNAMODB_TABLA_CONVERSACIONES: conversaciones
       WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-token-local}
       WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-secreto-local}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -63,7 +64,7 @@ services:
     ports:
       - "4566:4566"
     environment:
-      SERVICES: sqs,s3
+      SERVICES: sqs,s3,dynamodb
       AWS_DEFAULT_REGION: us-east-1
     volumes:
       - ./localstack/init-sqs.sh:/etc/localstack/init/ready.d/init-sqs.sh:ro

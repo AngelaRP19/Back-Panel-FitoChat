@@ -25,6 +25,8 @@ select = ["E", "F", "I", "UP", "B"]
 "app/infrastructure/db/seed_demo.py" = ["E501"]
 # Las aserciones largas se leen mejor enteras.
 "tests/**" = ["E501"]
+# Los textos del chatbot son frases completas para el productor: se leen mejor enteras.
+"app/modules/orchestrator/textos.py" = ["E501"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app", "tests"]

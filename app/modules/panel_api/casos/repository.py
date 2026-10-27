@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.paginacion import ParametrosPagina
 from app.core.catalogos_api import CATEGORIAS, ESPECIES, ESTADOS_CASO, EstadoCaso
+from app.core.evidencias import PREGUNTA_FOTO
 from app.infrastructure.db import procedimientos as sp
 from app.infrastructure.db.models import Asignacion
 from app.modules.panel_api.cuentas.repository import normalizar_busqueda
@@ -320,9 +321,11 @@ async def resumenes(session: AsyncSession, id_caso: str) -> ResumenesCaso:
         await session.execute(
             text(
                 "SELECT count(*), min(r.fecha_respuesta), max(r.fecha_respuesta) FROM respuestas r "
-                "JOIN diagnosticos d ON d.id_diagnostico = r.id_diagnostico WHERE d.id_caso = :c"
+                "JOIN preguntas p ON p.id_pregunta = r.id_pregunta "
+                "JOIN diagnosticos d ON d.id_diagnostico = r.id_diagnostico "
+                "WHERE d.id_caso = :c AND p.texto_pregunta <> :foto"
             ),
-            {"c": id_caso},
+            {"c": id_caso, "foto": PREGUNTA_FOTO},
         )
     ).one()
     evento = (
@@ -394,10 +397,11 @@ async def cuestionario(session: AsyncSession, id_caso: str) -> list[tuple[str, s
         text(
             "SELECT p.texto_pregunta, r.texto_respuesta, r.fecha_respuesta FROM respuestas r "
             "JOIN preguntas p ON p.id_pregunta = r.id_pregunta "
-            "JOIN diagnosticos d ON d.id_diagnostico = r.id_diagnostico WHERE d.id_caso = :c "
+            "JOIN diagnosticos d ON d.id_diagnostico = r.id_diagnostico "
+            "WHERE d.id_caso = :c AND p.texto_pregunta <> :foto "
             "ORDER BY r.fecha_respuesta, r.id_respuesta"
         ),
-        {"c": id_caso},
+        {"c": id_caso, "foto": PREGUNTA_FOTO},
     )
     return [(str(p), str(r), f) for p, r, f in resultado]
 

@@ -5,12 +5,13 @@ menos una vez"). Se logra con una sola transacción que hace tres cosas a la vez
 
 1. inserta el mensaje en `mensajes_whatsapp` (el `wamid` es único: si ya estaba, es un duplicado y se descarta);
 2. ejecuta el manejador (el orquestador conversacional, módulo 10);
-3. confirma.
+3. confirma; y solo entonces aplica los efectos externos que el manejador pidió (responder por WhatsApp y guardar
+   el estado de la conversación).
 
 Si el manejador falla, la transacción se deshace y el mensaje deja de constar como recibido: el reintento lo procesa
 completo. Si dos consumidores reciben el mismo `wamid` a la vez, el segundo espera a que termine el primero y entonces
 lo ve como duplicado. Lo que el manejador haga fuera de la base (por ejemplo, enviar una respuesta) debe hacerlo
-después de confirmar o ser tolerante a repeticiones.
+después de confirmar: para eso existen los `Efectos`.
 """
 
 import json
@@ -24,6 +25,7 @@ from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
 from app.core.logging import mask_phone
+from app.modules.consumer.efectos import Efectos
 
 logger = logging.getLogger(__name__)
 
@@ -47,15 +49,17 @@ class MensajeEntrante:
     id_productor: str | None  # nulo si el número aún no está registrado (P-B08: lo registra el orquestador)
 
 
-Manejador = Callable[[Session, MensajeEntrante], None]
+Manejador = Callable[[Session, MensajeEntrante], Efectos | None]
+Aplicador = Callable[[MensajeEntrante, Efectos], None]
 
 
-def manejador_pendiente(sesion: Session, mensaje: MensajeEntrante) -> None:
+def manejador_pendiente(sesion: Session, mensaje: MensajeEntrante) -> Efectos | None:
     """Manejador provisional: el orquestador conversacional llega en el módulo 10. Solo deja constancia."""
     logger.info(
         "Mensaje recibido; el orquestador aún no está conectado",
         extra={"wamid": mensaje.wamid, "celular": mask_phone(mensaje.telefono), "tipo": mensaje.tipo},
     )
+    return None
 
 
 def interpretar(cuerpo: str) -> tuple[str, str, str, str | None, dict[str, Any]]:
@@ -90,9 +94,12 @@ _REGISTRAR = text(
 
 
 class Procesador:
-    def __init__(self, engine: Engine, manejador: Manejador = manejador_pendiente) -> None:
+    def __init__(
+        self, engine: Engine, manejador: Manejador = manejador_pendiente, aplicador: Aplicador | None = None
+    ) -> None:
         self.engine = engine
         self.manejador = manejador
+        self.aplicador = aplicador
 
     def procesar(self, cuerpo: str) -> ResultadoProceso:
         wamid, telefono, tipo, marca, contenido = interpretar(cuerpo)
@@ -109,5 +116,15 @@ class Procesador:
             if fila is None:  # ya estaba: otro intento o un reintento de Meta lo había procesado
                 logger.info("Mensaje duplicado descartado", extra={"wamid": wamid, "celular": mask_phone(telefono)})
                 return ResultadoProceso.DUPLICADO
-            self.manejador(sesion, MensajeEntrante(wamid, telefono, tipo, marca, contenido, fila[0]))
+            mensaje = MensajeEntrante(wamid, telefono, tipo, marca, contenido, fila[0])
+            efectos = self.manejador(sesion, mensaje)
+        # La transacción ya se confirmó: ahora sí salen las respuestas y se guarda el estado de la conversación.
+        if efectos is not None and self.aplicador is not None:
+            try:
+                self.aplicador(mensaje, efectos)
+            except Exception:  # el mensaje ya consta como procesado: reintentarlo no repetiría nada, solo se avisa
+                logger.exception(
+                    "No se pudieron aplicar los efectos del mensaje",
+                    extra={"wamid": wamid, "celular": mask_phone(telefono)},
+                )
         return ResultadoProceso.PROCESADO

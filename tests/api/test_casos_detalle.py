@@ -421,3 +421,18 @@ def test_el_historial_del_caso_nuevo_tiene_su_creacion(api: TestClient, mundo: M
 def test_el_historial_no_trae_telefonos(api: TestClient, mundo: Mundo, caso: str) -> None:
     cuerpo = api.get(f"{URL}/{caso}/historial", headers=mundo.lider.headers).text
     assert "3001112001" not in cuerpo and "573001112001" not in cuerpo
+
+
+def test_las_respuestas_que_solo_llevan_una_foto_no_cuentan_como_cuestionario(
+    api: TestClient, mundo: Mundo, migrated: Engine
+) -> None:
+    """El chatbot cuelga cada foto de una respuesta con la «pregunta» fija de evidencia: no es parte del cuestionario."""
+    from app.core.evidencias import PREGUNTA_FOTO
+
+    id_caso = crear_caso(migrated, mundo.cultivo1, "GULUPA", "Pendiente de revisión", enviado_hace=timedelta(hours=1))
+    crear_respuesta(migrated, id_caso, "¿Desde cuándo?", "Hace una semana")
+    crear_respuesta(migrated, id_caso, PREGUNTA_FOTO, "Fotografía enviada", fotos=(("HOJA", CLAVE.format("X1"), True),))
+    cuestionario = pedir(api, mundo.lider, f"{URL}/{id_caso}/cuestionario")
+    assert [r["pregunta"] for r in cuestionario["respuestas"]] == ["¿Desde cuándo?"]
+    detalle = pedir(api, mundo.lider, f"{URL}/{id_caso}")
+    assert detalle["cuestionario_resumen"]["respuestas"] == 1 and detalle["evidencias_resumen"]["total"] == 1

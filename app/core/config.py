@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     sqs_backoff_base_segundos: int = 5
     sqs_backoff_maximo_segundos: int = 60
 
+    # Estado de las conversaciones del chatbot (D-15): tabla de DynamoDB. Sin tabla, en memoria (solo local y pruebas).
+    dynamodb_tabla_conversaciones: str | None = None
+    conversacion_vigencia_dias: int = 7
+
     whatsapp_verify_token: SecretStr
     whatsapp_app_secret: SecretStr
     whatsapp_access_token: SecretStr | None = None

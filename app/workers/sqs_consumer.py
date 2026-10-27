@@ -29,8 +29,14 @@ from sqlalchemy import create_engine
 
 from app.core.config import Settings, get_database_settings, get_settings
 from app.core.logging import configure_logging
+from app.infrastructure.ai_client import get_ai_client
+from app.infrastructure.conversaciones_store import get_conversaciones_store
+from app.infrastructure.s3_storage_client import S3StorageClient, build_boto3_s3_client
 from app.infrastructure.sqs_queue_client import MensajeSqs, SqsQueueClient, build_boto3_sqs_client
+from app.infrastructure.whatsapp_client import get_whatsapp_client
 from app.modules.consumer.procesador import MensajeInvalido, Procesador, ResultadoProceso
+from app.modules.orchestrator.orquestador import Orquestador
+from app.modules.orchestrator.puertos import IdentificadorSimulado, PipelineSimulado
 
 logger = logging.getLogger("app.workers.sqs_consumer")
 
@@ -155,8 +161,22 @@ def main() -> int:
     configure_logging("INFO")
     settings = get_settings()
     cola = SqsQueueClient(build_boto3_sqs_client(), settings.sqs_queue_url)
+    try:
+        orquestador = Orquestador(
+            get_conversaciones_store(),
+            get_whatsapp_client(),
+            get_ai_client(),
+            PipelineSimulado(),  # el pipeline y el identificador reales llegan en el módulo 11
+            IdentificadorSimulado(),
+            S3StorageClient(build_boto3_s3_client(), settings.s3_bucket_evidencias)
+            if settings.s3_bucket_evidencias
+            else None,
+        )
+    except RuntimeError as error:  # p. ej. WhatsApp o IA reales aún no disponibles, o falta la tabla de conversaciones
+        print(str(error), file=sys.stderr)
+        return CONFIGURACION
     engine = create_engine(get_database_settings().sqlalchemy_url)
-    consumidor = Consumidor(cola, Procesador(engine), settings)
+    consumidor = Consumidor(cola, Procesador(engine, orquestador.manejar, orquestador.aplicar), settings)
 
     def apagar(numero: int, marco: FrameType | None) -> None:
         consumidor.pedir_detencion()

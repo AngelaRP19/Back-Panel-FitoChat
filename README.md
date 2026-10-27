@@ -2,7 +2,7 @@
 
 API del panel fitosanitario y webhook del asistente de WhatsApp (FastAPI, Python 3.12) para AWS ECS Fargate. Se desarrolla módulo por módulo según `BACKEND_GUIA.md`.
 
-Estado: módulos 0b (operación y despliegue), 1b (ajustes del modelo y semillas v2), 1c (objetos SQL), 1d (datos de demostración), 2 (cuentas y acceso) y 3 (productores, fincas y cultivos) 4 (casos: bandeja y detalle) 5 (diagnóstico y cierre) 6 (alertas del panel) 7 (resumen e inicio) 8 (jobs programados) y 9 (consumidor de la cola) listos para revisión. Ya hay configuración, `/api/v1`, CORS, validación de JWT de Cognito, `GET /api/v1/me`, CI, el webhook que encola en SQS y la capa de datos (SQLAlchemy 2 + Alembic sobre PostgreSQL 16 con PostGIS y pgvector) con los ajustes aprobados el 26-oct-2026. Sigue el módulo 10: orquestador conversacional (Fase C).
+Estado: módulos 0b (operación y despliegue), 1b (ajustes del modelo y semillas v2), 1c (objetos SQL), 1d (datos de demostración), 2 (cuentas y acceso) y 3 (productores, fincas y cultivos) 4 (casos: bandeja y detalle) 5 (diagnóstico y cierre) 6 (alertas del panel) 7 (resumen e inicio) 8 (jobs programados) 9 (consumidor de la cola) y 10 (orquestador conversacional) listos para revisión. Ya hay configuración, `/api/v1`, CORS, validación de JWT de Cognito, `GET /api/v1/me`, CI, el webhook que encola en SQS y la capa de datos (SQLAlchemy 2 + Alembic sobre PostgreSQL 16 con PostGIS y pgvector) con los ajustes aprobados el 26-oct-2026. Sigue el módulo 11: pipeline de imágenes, identificación y clientes reales (Fase C).
 
 ## Rutas
 
@@ -172,7 +172,20 @@ Código de salida: `0` bien (o se omitió porque otra ejecución seguía corrien
 - **Borrado tras procesar**, *long polling*, orden por conversación (el celular es el grupo FIFO) y reintentos con *backoff* (5, 10, 20, 40, 60 s). Tras 5 recepciones SQS lo manda a la DLQ `mensajes-entrantes-dlq.fifo`.
 - **Apagado ordenado** con SIGTERM/SIGINT: termina el mensaje en curso y libera el resto del lote.
 - Al arrancar exige que el *visibility timeout* de la cola (120 s) supere el procesamiento máximo (`SQS_PROCESAMIENTO_MAXIMO_SEGUNDOS`, 90 s); si no, sale con código 2.
-- Mientras no exista el orquestador (módulo 10) el manejador solo deja constancia: registra el mensaje y no responde.
+- El manejador es el orquestador conversacional (ver abajo). Las respuestas por WhatsApp y el estado de la conversación se aplican **después** de confirmar la transacción: si algo falla, no sale nada y el reintento lo repite completo.
+
+## Chatbot (orquestador conversacional)
+
+Cada mensaje que el consumidor recibe pasa por la máquina de estados de `app/modules/orchestrator/`. El estado de cada conversación (paso, caso en curso, contexto) vive en DynamoDB (`DYNAMODB_TABLA_CONVERSACIONES`; en memoria si no se define, solo fuera de prod); la verdad sobre el caso vive en PostgreSQL.
+
+Flujo: saludo y consentimiento → finca → cultivo → especie y zona afectada → cuestionario → fotos → resumen y envío.
+
+- **La IA conduce las preguntas de síntomas**: la aplicación no las trae escritas. En cada turno le da a la IA el contexto del caso y la última respuesta, y la IA devuelve la siguiente pregunta, si lo respondido sirve y si está fuera del dominio (`app/infrastructure/ai_client.py`). La app solo conecta y envía los mensajes, y filtra con el guardrail que nunca se recete un tratamiento. Con `INTEGRACION_IA=simulada` no hay IA real: el cuestionario se da por completo y se pasa a pedir las fotos (la IA real llega en el módulo 11).
+- Un número desconocido se registra con consentimiento (P-B08); uno registrado desde el panel debe aceptar el tratamiento de sus datos (D-12). El texto del aviso es provisional (P-B07).
+- Una finca sin cultivos se completa desde WhatsApp (nombre, tipo, especies). Con varias especies en el cultivo, cada consulta es de una sola (P-10).
+- Fotos: hasta 3 por tipo y 12 en total; mínimo 1 útil. Las valida un pipeline de imágenes (interfaz; simulado hasta el módulo 11). Un caso llega a **Pendiente de revisión** solo con el cuestionario completo y al menos una foto válida.
+- `/salir` pide confirmación y, si confirma, borra el caso con todos sus datos y fotos. Cada mensaje reinicia el conteo de inactividad; responder tras la advertencia de 48 h retoma donde se quedó.
+- Todos los textos del bot están en `app/modules/orchestrator/textos.py`.
 
 ## Tests, lint y tipos
 

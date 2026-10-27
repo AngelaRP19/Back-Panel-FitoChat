@@ -23,3 +23,13 @@ echo "Cola mensajes-entrantes.fifo creada"
 awslocal s3api create-bucket --bucket anuc-evidencias
 awslocal s3api put-bucket-versioning --bucket anuc-evidencias --versioning-configuration Status=Enabled
 echo "Bucket anuc-evidencias creado con versionado"
+
+# Estado de las conversaciones del chatbot (D-15): un documento por teléfono, con TTL en `expira_en`.
+awslocal dynamodb create-table \
+  --table-name conversaciones \
+  --attribute-definitions AttributeName=telefono,AttributeType=S \
+  --key-schema AttributeName=telefono,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST
+awslocal dynamodb update-time-to-live --table-name conversaciones \
+  --time-to-live-specification Enabled=true,AttributeName=expira_en
+echo "Tabla conversaciones creada"
