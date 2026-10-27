@@ -73,7 +73,10 @@ async def _http_error_handler(_: Request, exc: Exception) -> JSONResponse:
 
 async def _validation_error_handler(_: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, RequestValidationError)
-    campos = {".".join(str(p) for p in err["loc"][1:]) or "cuerpo": err["msg"] for err in exc.errors()}
+    campos = {
+        ".".join(str(p) for p in err["loc"][1:]) or "cuerpo": str(err["msg"]).removeprefix("Value error, ")
+        for err in exc.errors()
+    }
     return error_response(status.HTTP_422_UNPROCESSABLE_ENTITY, "VALIDACION", "Revisa los datos enviados.", campos)
 
 

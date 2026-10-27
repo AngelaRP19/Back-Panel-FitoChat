@@ -146,6 +146,13 @@ async def claims_actuales(
         raise ApiError(503, "ERROR_INTERNO", "No pudimos verificar tu sesión. Intenta de nuevo.") from None
 
 
+async def token_actual(credenciales: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)]) -> str:
+    """El access token tal cual llegó (Cognito lo necesita para cambiar la contraseña). Va junto a `usuario_actual`."""
+    if credenciales is None:
+        raise _no_autenticado("Falta iniciar sesión.")
+    return credenciales.credentials
+
+
 @dataclass(frozen=True)
 class UsuarioActual:
     id: str
