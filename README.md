@@ -2,7 +2,7 @@
 
 API del panel fitosanitario y webhook del asistente de WhatsApp (FastAPI, Python 3.12) para AWS ECS Fargate. Se desarrolla módulo por módulo según `BACKEND_GUIA.md`.
 
-Estado: módulos 0b (operación y despliegue), 1b (ajustes del modelo y semillas v2), 1c (objetos SQL), 1d (datos de demostración), 2 (cuentas y acceso) y 3 (productores, fincas y cultivos) 4 (casos: bandeja y detalle) 5 (diagnóstico y cierre) 6 (alertas del panel) 7 (resumen e inicio) y 8 (jobs programados) listos para revisión. Ya hay configuración, `/api/v1`, CORS, validación de JWT de Cognito, `GET /api/v1/me`, CI, el webhook que encola en SQS y la capa de datos (SQLAlchemy 2 + Alembic sobre PostgreSQL 16 con PostGIS y pgvector) con los ajustes aprobados el 26-oct-2026. Sigue el módulo 9: consumidor de la cola (Fase C).
+Estado: módulos 0b (operación y despliegue), 1b (ajustes del modelo y semillas v2), 1c (objetos SQL), 1d (datos de demostración), 2 (cuentas y acceso) y 3 (productores, fincas y cultivos) 4 (casos: bandeja y detalle) 5 (diagnóstico y cierre) 6 (alertas del panel) 7 (resumen e inicio) 8 (jobs programados) y 9 (consumidor de la cola) listos para revisión. Ya hay configuración, `/api/v1`, CORS, validación de JWT de Cognito, `GET /api/v1/me`, CI, el webhook que encola en SQS y la capa de datos (SQLAlchemy 2 + Alembic sobre PostgreSQL 16 con PostGIS y pgvector) con los ajustes aprobados el 26-oct-2026. Sigue el módulo 10: orquestador conversacional (Fase C).
 
 ## Rutas
 
@@ -163,6 +163,16 @@ Se ejecutan con `python -m app.jobs.run <nombre>` (en AWS, EventBridge Scheduler
 | `evaluar_alertas` | diario | Barrido de respaldo de `sp_evaluar_alerta` para las categorías transmisibles. |
 
 Código de salida: `0` bien (o se omitió porque otra ejecución seguía corriendo), `1` hubo errores (revisar los logs), `2` comando o configuración incorrectos (falta `S3_BUCKET_EVIDENCIAS`, WhatsApp no disponible…). Si borrar en S3 falla, no se borra la fila: el siguiente ciclo lo reintenta. Los textos de los avisos son provisionales hasta que el equipo los valide.
+
+## Consumidor de la cola
+
+`python -m app.workers.sqs_consumer` toma los mensajes que el webhook dejó en SQS FIFO (un servicio ECS propio, con la misma imagen; en local: `docker compose --profile consumer up -d consumer`).
+
+- **Una sola vez por mensaje**: el `wamid` es único en `mensajes_whatsapp`. Registrar el mensaje y ejecutar el manejador van en una misma transacción: si algo falla se deshace todo y el reintento lo procesa completo; si llega repetido, se descarta.
+- **Borrado tras procesar**, *long polling*, orden por conversación (el celular es el grupo FIFO) y reintentos con *backoff* (5, 10, 20, 40, 60 s). Tras 5 recepciones SQS lo manda a la DLQ `mensajes-entrantes-dlq.fifo`.
+- **Apagado ordenado** con SIGTERM/SIGINT: termina el mensaje en curso y libera el resto del lote.
+- Al arrancar exige que el *visibility timeout* de la cola (120 s) supere el procesamiento máximo (`SQS_PROCESAMIENTO_MAXIMO_SEGUNDOS`, 90 s); si no, sale con código 2.
+- Mientras no exista el orquestador (módulo 10) el manejador solo deja constancia: registra el mensaje y no responde.
 
 ## Tests, lint y tipos
 

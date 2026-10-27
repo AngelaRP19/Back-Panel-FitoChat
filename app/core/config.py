@@ -59,6 +59,12 @@ class Settings(BaseSettings):
     alertas_lote_envio: int = 50
     alertas_pausa_lote_segundos: float = 1.0
 
+    # Consumidor de la cola. El visibility timeout de la cola debe ser MAYOR que el procesamiento máximo.
+    sqs_espera_larga_segundos: int = 10
+    sqs_procesamiento_maximo_segundos: int = 90
+    sqs_backoff_base_segundos: int = 5
+    sqs_backoff_maximo_segundos: int = 60
+
     whatsapp_verify_token: SecretStr
     whatsapp_app_secret: SecretStr
     whatsapp_access_token: SecretStr | None = None
