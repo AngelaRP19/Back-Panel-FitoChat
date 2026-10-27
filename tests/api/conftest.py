@@ -168,3 +168,34 @@ def catalogos(api: TestClient, migrated: Engine) -> None:
 
     with migrated.begin() as conexion:
         seed(conexion)
+
+
+@dataclass
+class Mundo:
+    """Un líder, dos técnicos y dos productores con una finca y un cultivo cada uno, sobre catálogos reales."""
+
+    lider: Cuenta
+    t1: Cuenta
+    t2: Cuenta
+    productor1: dict[str, Any]
+    productor2: dict[str, Any]
+    finca1: dict[str, Any]
+    finca2: dict[str, Any]
+    cultivo1: str  # La Esperanza (Centro): gulupa y maracuyá
+    cultivo2: str  # El Roble (San Luis): maracuyá
+
+
+@pytest.fixture
+def mundo(api: TestClient, catalogos: None, nueva_cuenta: NuevaCuenta) -> Mundo:
+    from tests.api.territorio import crear_cultivo, crear_finca, crear_productor
+
+    lider = nueva_cuenta(Rol.LIDER_TECNICO, nombre="Laura Líder")
+    t1 = nueva_cuenta(Rol.TECNICO, 1, nombre="Ana Técnica")
+    t2 = nueva_cuenta(Rol.TECNICO, 2, nombre="Beto Técnico")
+    p1 = crear_productor(api, lider, 1, nombre="Ana Pérez")
+    p2 = crear_productor(api, lider, 2, nombre="Álvaro Díaz")
+    f1 = crear_finca(api, lider, p1["id"], "La Esperanza", "Centro")
+    f2 = crear_finca(api, lider, p2["id"], "El Roble", "San Luis")
+    c1 = crear_cultivo(api, lider, f1["id"], "Lote 1", "CAMPO_ABIERTO", ("GULUPA", "MARACUYA"))["cultivos"][0]["id"]
+    c2 = crear_cultivo(api, lider, f2["id"], "Lote 1", "INVERNADERO", ("MARACUYA",))["cultivos"][0]["id"]
+    return Mundo(lider, t1, t2, p1, p2, f1, f2, c1, c2)
