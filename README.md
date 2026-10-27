@@ -2,7 +2,7 @@
 
 API del panel fitosanitario y webhook del asistente de WhatsApp (FastAPI, Python 3.12) para AWS ECS Fargate. Se desarrolla módulo por módulo según `BACKEND_GUIA.md`.
 
-Estado: módulos 0b (operación y despliegue), 1b (ajustes del modelo y semillas v2), 1c (objetos SQL), 1d (datos de demostración), 2 (cuentas y acceso) y 3 (productores, fincas y cultivos) 4 (casos: bandeja y detalle) 5 (diagnóstico y cierre) y 6 (alertas del panel) listos para revisión. Ya hay configuración, `/api/v1`, CORS, validación de JWT de Cognito, `GET /api/v1/me`, CI, el webhook que encola en SQS y la capa de datos (SQLAlchemy 2 + Alembic sobre PostgreSQL 16 con PostGIS y pgvector) con los ajustes aprobados el 26-oct-2026. Sigue el módulo 7: resumen e inicio (Fase B).
+Estado: módulos 0b (operación y despliegue), 1b (ajustes del modelo y semillas v2), 1c (objetos SQL), 1d (datos de demostración), 2 (cuentas y acceso) y 3 (productores, fincas y cultivos) 4 (casos: bandeja y detalle) 5 (diagnóstico y cierre) 6 (alertas del panel) y 7 (resumen e inicio) listos para revisión. Ya hay configuración, `/api/v1`, CORS, validación de JWT de Cognito, `GET /api/v1/me`, CI, el webhook que encola en SQS y la capa de datos (SQLAlchemy 2 + Alembic sobre PostgreSQL 16 con PostGIS y pgvector) con los ajustes aprobados el 26-oct-2026. Sigue el módulo 8: jobs programados.
 
 ## Rutas
 
@@ -25,6 +25,8 @@ Estado: módulos 0b (operación y despliegue), 1b (ajustes del modelo y semillas
 | `GET /api/v1/casos/{id}` y `/evidencias`, `/cuestionario`, `/explicacion`, `/historial` | Bearer (líder o técnico) | Detalle consolidado con `puede_diagnosticar`, `puede_cerrar` y `puede_asignar` calculados para quien consulta; fotos con URL prefirmada de 10 minutos. Lo que no está asignado al técnico responde `404`. |
 | `PATCH /api/v1/casos/{id}/asignacion` | Bearer, solo líder técnico | Asigna (Pendiente de revisión → En revisión) o reasigna (conserva el estado). `409 TRANSICION_INVALIDA` si ya está Registrado, Cerrado, Descartado o aún no se envía; `409 CASO_YA_ASIGNADO` si es el mismo técnico. |
 | `GET /api/v1/resumen/navegacion` | Bearer (líder o técnico) | `{pendientes, alertas_generadas}` para el Sidebar; el técnico ve solo lo suyo. |
+| `GET /api/v1/resumen/inicio` | Bearer (líder o técnico) | Indicadores del Inicio; la forma depende del rol (`rol`): el líder ve pendientes, en revisión, cerrados del mes, próximos a vencer, alertas y carga de los técnicos; el técnico, solo lo suyo. |
+| `GET /api/v1/resumen/casos-por-categoria?periodo=30d\|90d\|anio` | Bearer, solo líder técnico | Diagnósticos confirmados por categoría en el periodo. |
 | `POST /api/v1/casos/{id}/diagnostico` | Bearer, solo técnico | Completa el diagnóstico (En revisión → Registrado, `sp_registrar_diagnostico`). Solo el técnico de la asignación vigente: el líder recibe `403` y otro técnico `404`. `CONFIRMADO` solo si la identificación fue preliminar; `OTRA_PATOLOGIA` exige categoría; `REQUIERE_VISITA`, el motivo. Una categoría transmisible evalúa las alertas en la misma transacción. |
 | `POST /api/v1/casos/{id}/cierre` | Bearer (líder o técnico asignado) | Registrado → Cerrado (`sp_cerrar_caso`); `vence_en` = cierre + `MESES_CONSERVACION` (6). Sin reapertura: un caso cerrado responde `409 TRANSICION_INVALIDA`. |
 | `GET /api/v1/alertas`, `GET /api/v1/alertas/{id}`, `GET /api/v1/alertas/parametros` | Bearer (líder o técnico) | Alertas con `conteos` por estado, casos que las originan (el técnico solo abre los suyos) y parámetros por categoría. |
