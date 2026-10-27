@@ -1,9 +1,7 @@
-from collections.abc import Callable
 from decimal import Decimal
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.infrastructure.db.models import (
@@ -14,16 +12,7 @@ from app.infrastructure.db.models import (
     ParametroEpidemiologico,
 )
 from tests.infrastructure.db.factories import ahora, escenario
-
-
-def _viola(session: Session, constraint: str, accion: Callable[[], None]) -> None:
-    """Ejecuta la acción en un savepoint y comprueba que falla por la restricción indicada."""
-    with pytest.raises(IntegrityError) as exc:
-        with session.begin_nested():
-            accion()
-            session.flush()
-    assert exc.value.orig.diag.constraint_name == constraint  # type: ignore[union-attr]
-
+from tests.infrastructure.db.factories import viola as _viola
 
 # --- únicos ----------------------------------------------------------------------------------
 

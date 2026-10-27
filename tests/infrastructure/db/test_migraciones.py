@@ -17,16 +17,31 @@ RESTRICCIONES_DEL_MODELO = {
     "uq_lid_tec_correo", "uq_lid_tec_celular", "uq_dia_caso", "uq_par_categoria",
     "fk_fin_productor", "fk_cul_finca", "fk_ce_cultivo", "fk_ce_especie", "fk_coi_identificacion",
     "fk_coi_categoria", "fk_cas_cul_esp", "fk_cas_iden", "fk_cas_estado", "fk_eve_caso", "fk_dia_caso",
-    "fk_dia_tecnico", "fk_dia_categoria", "fk_res_pregunta", "fk_res_diagnostico", "fk_fot_res",
+    "fk_dia_categoria", "fk_res_pregunta", "fk_res_diagnostico", "fk_fot_res",
     "fk_par_categoria", "fk_ale_categoria", "fk_aud_lider",
+    # Ajustes aprobados el 26-oct-2026 (migración 0002)
+    "pk_asignaciones", "pk_alerta_casos", "pk_alerta_destinatarios", "uq_ade_envio",
+    "fk_asg_caso", "fk_asg_tecnico", "fk_ale_lider_gestion", "fk_ale_lider_correccion",
+    "fk_alc_alerta", "fk_alc_caso", "fk_ade_alerta", "fk_ade_productor", "fk_aud_tecnico",
+    "ck_diagnosticos_categoria_requerida", "ck_diagnosticos_fecha_con_resultado",
+    "ck_auditoria_origen_coherente", "ck_cultivos_tipo_cultivo_valido", "ck_fotografias_es_util_sn",
+    "ck_alerta_destinatarios_tipo_envio_valido",
+    # CHECK que ya traía 0001, con el nombre que les da la convención del MetaData
+    "ck_categorias_fitosanitarias_es_transmisible_sn", "ck_casos_advertencia_inactividad_enviada_sn",
+    "ck_coincidencias_categoria_porcentaje_rango", "ck_parametros_epidemiologicos_numero_minimo_casos_rango",
+    "ck_parametros_epidemiologicos_intervalo_dias_rango",
 }  # fmt: skip
+
+# D-01: el autor del diagnóstico sale de la asignación vigente.
+RESTRICCIONES_ELIMINADAS = {"fk_dia_tecnico", "ix_diag_tecnico"}
 
 INDICES_DEL_MODELO = {
     "ix_fincas_productor", "ix_cultivos_finca", "ix_cult_esp_especie", "ix_coinc_categoria", "ix_casos_cult_esp",
-    "ix_casos_identificacion", "ix_casos_estado", "ix_eventos_caso", "ix_diag_tecnico", "ix_diag_categoria",
+    "ix_casos_identificacion", "ix_casos_estado", "ix_eventos_caso", "ix_diag_categoria",
     "ix_fotos_respuesta", "ix_alertas_categoria", "ix_auditoria_lider", "ix_auditoria_entidad",
     # agregados
     "ix_fincas_ubicacion", "ix_cultivos_ubicacion", "ix_msg_telefono_fecha", "ix_con_embedding_hnsw",
+    "uq_asg_caso_vigente", "ix_alerta_casos_caso",
 }  # fmt: skip
 
 
@@ -61,12 +76,14 @@ def test_nombres_de_restricciones_del_modelo(migrated: Engine) -> None:
             conn.scalars(text("SELECT conname FROM pg_constraint WHERE connamespace = 'public'::regnamespace"))
         )
     assert RESTRICCIONES_DEL_MODELO - nombres == set()
+    assert not RESTRICCIONES_ELIMINADAS & nombres
 
 
 def test_nombres_de_indices(migrated: Engine) -> None:
     with migrated.connect() as conn:
         nombres = set(conn.scalars(text("SELECT indexname FROM pg_indexes WHERE schemaname = 'public'")))
     assert INDICES_DEL_MODELO - nombres == set()
+    assert "ix_diag_tecnico" not in nombres
 
 
 def test_indices_gist_y_hnsw(migrated: Engine) -> None:
