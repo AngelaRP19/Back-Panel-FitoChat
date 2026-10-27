@@ -30,6 +30,11 @@ class S3StorageClient:
     def subir(self, clave: str, contenido: bytes, content_type: str = "image/webp") -> None:
         self._client.put_object(Bucket=self.bucket, Key=clave, Body=contenido, ContentType=content_type)
 
+    def descargar(self, clave: str) -> bytes:
+        """Contenido de un objeto (las fotos de un caso, para que la IA las analice)."""
+        cuerpo: bytes = self._client.get_object(Bucket=self.bucket, Key=clave)["Body"].read()
+        return cuerpo
+
     def url_prefirmada(self, clave: str, expira_segundos: int = VIGENCIA_URL_SEGUNDOS) -> str:
         """URL de lectura con vigencia corta; el bucket es privado."""
         url: str = self._client.generate_presigned_url(

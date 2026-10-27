@@ -317,12 +317,12 @@ class CasosService:
         propuesta = (
             None if resultado is ResultadoAnalisis.NO_IDENTIFICADO or not porcentajes else porcentajes[0].categoria
         )
-        umbral = ajustes.umbral_identificacion_pct
+        umbral = ajustes.umbral_coincidencia
         reglas = {
             ResultadoAnalisis.PRELIMINAR: f"Identificado: una categoría alcanzó el {umbral} % de coincidencia o más.",
             ResultadoAnalisis.AMBIGUO: (
                 f"Ambiguo: dos categorías alcanzaron el {umbral} % con menos de "
-                f"{ajustes.margen_ambiguedad_pts} puntos de diferencia."
+                f"{ajustes.umbral_ambiguo} puntos de diferencia."
             ),
             ResultadoAnalisis.NO_IDENTIFICADO: f"No identificado: ninguna categoría llegó al {umbral} %.",
         }

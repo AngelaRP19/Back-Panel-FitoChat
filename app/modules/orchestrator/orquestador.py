@@ -25,15 +25,17 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.catalogos_api import CATEGORIAS, ESPECIES, EspecieCultivo, TipoCultivo
+from app.core.config import Settings, get_settings
 from app.core.evidencias import MAXIMO_FOTOS_POR_TIPO, MAXIMO_FOTOS_UTILES
 from app.core.guardrail import recomienda_tratamiento
 from app.core.logging import mask_phone
-from app.infrastructure.ai_client import AiClient, ContextoConsulta
+from app.infrastructure.ai_client import AiClient, ContextoConsulta, ErrorIA, con_reintentos
 from app.infrastructure.conversaciones_store import Conversacion, ConversacionesStore
 from app.infrastructure.s3_storage_client import S3StorageClient
 from app.infrastructure.whatsapp_client import WhatsAppClient
 from app.modules.consumer.efectos import Efectos
 from app.modules.consumer.procesador import MensajeEntrante
+from app.modules.identification.reglas import ordenar
 from app.modules.orchestrator import repositorio as repo
 from app.modules.orchestrator import textos as t
 from app.modules.orchestrator.puertos import Identificador, PipelineImagenes
@@ -142,7 +144,11 @@ class Orquestador:
         pipeline: PipelineImagenes,
         identificador: Identificador,
         s3: S3StorageClient | None = None,
+        ajustes: Settings | None = None,
+        dormir: Callable[[float], None] = time.sleep,
     ) -> None:
+        self.ajustes = ajustes or get_settings()
+        self.dormir = dormir
         self.store = store
         self.whatsapp = whatsapp
         self.ai = ai
@@ -446,7 +452,19 @@ class Orquestador:
             historial=repo.historial(d.s, d.conv.caso_id),
             pregunta_pendiente=pendiente,
         )
-        turno = self.ai.conducir(contexto, mensaje)
+        try:
+            turno = con_reintentos(
+                lambda: self.ai.conducir(contexto, mensaje),
+                self.ajustes.ia_reintentos,
+                self.ajustes.ia_pausa_reintento_segundos,
+                self.dormir,
+            )
+        except ErrorIA:  # la IA no responde: se pide perdón y se sigue con las fotos; el técnico revisa el caso
+            logger.error("La IA no respondió; se salta el cuestionario", extra={"id_caso": d.conv.caso_id})
+            d.decir(t.IA_NO_DISPONIBLE)
+            d.ctx.update(pregunta_actual=None, cuestionario_completo=True)
+            self._pedir_fotos(d)
+            return
         if mensaje is not None and turno.fuera_de_dominio:  # se rechaza con un mensaje fijo y se repite el paso
             d.decir(t.FUERA_DE_DOMINIO)
             if pendiente:
@@ -543,7 +561,7 @@ class Orquestador:
             d.decir(t.FALTA_FOTO)
             d.ir_a(Paso.FOTOS)
             return
-        identificacion = self.identificador.identificar(d.conv.caso_id)
+        identificacion = self.identificador.identificar(d.s, d.conv.caso_id)
         if identificacion is not None:
             repo.guardar_identificacion(
                 d.s,
@@ -555,13 +573,12 @@ class Orquestador:
             )
         repo.enviar_al_panel(d.s, d.conv.caso_id, d.productor.id)
         d.decir(t.ENVIADO)
-        if (
-            identificacion is not None
-            and identificacion.tipo_resultado != "NO_IDENTIFICADO"
-            and identificacion.porcentajes
-        ):
-            principal = max(identificacion.porcentajes, key=lambda c: identificacion.porcentajes[c])
-            d.decir(t.RESULTADO_PRELIMINAR.format(resultado=CATEGORIAS.a_nombre(principal)))
+        if identificacion is not None and identificacion.porcentajes:
+            primeras = [CATEGORIAS.a_nombre(c) for c, _ in ordenar(identificacion.porcentajes)[:2]]
+            if identificacion.tipo_resultado == "PRELIMINAR":
+                d.decir(t.RESULTADO_PRELIMINAR.format(resultado=primeras[0]))
+            elif identificacion.tipo_resultado == "AMBIGUO" and len(primeras) == 2:
+                d.decir(t.RESULTADO_AMBIGUO.format(primera=primeras[0], segunda=primeras[1]))
         d.ef.borrar_conversacion = True  # la consulta terminó: ya es del técnico
 
     # --- /salir, abandonar y retomar -------------------------------------------------------------

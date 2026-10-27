@@ -88,7 +88,7 @@ class IdentificadorProgramable(IdentificadorSimulado):
     def __init__(self) -> None:
         self.resultado: Identificacion | None = None
 
-    def identificar(self, id_caso: str) -> Identificacion | None:
+    def identificar(self, s: Any, id_caso: str) -> Identificacion | None:
         return self.resultado
 
 
@@ -99,7 +99,7 @@ def sistema(migrated: Engine) -> Iterator[Sistema]:
         seed(conexion)
     store, whatsapp, ai, pipeline = ConversacionesEnMemoria(), WhatsAppSimulado(), AiSimulado(), PipelineSimulado()
     s3, identificador = S3Registrador(), IdentificadorProgramable()
-    orq = Orquestador(store, whatsapp, ai, pipeline, identificador, s3)  # type: ignore[arg-type]
+    orq = Orquestador(store, whatsapp, ai, pipeline, identificador, s3, dormir=lambda _: None)  # type: ignore[arg-type]
     yield Sistema(
         migrated, store, whatsapp, ai, pipeline, orq, Procesador(migrated, orq.manejar, orq.aplicar), s3, identificador
     )

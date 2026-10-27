@@ -31,12 +31,15 @@ from app.core.config import Settings, get_database_settings, get_settings
 from app.core.logging import configure_logging
 from app.infrastructure.ai_client import get_ai_client
 from app.infrastructure.conversaciones_store import get_conversaciones_store
+from app.infrastructure.rekognition_client import get_moderador
 from app.infrastructure.s3_storage_client import S3StorageClient, build_boto3_s3_client
 from app.infrastructure.sqs_queue_client import MensajeSqs, SqsQueueClient, build_boto3_sqs_client
 from app.infrastructure.whatsapp_client import get_whatsapp_client
 from app.modules.consumer.procesador import MensajeInvalido, Procesador, ResultadoProceso
+from app.modules.identification.servicio import IdentificadorIA
+from app.modules.image_pipeline.pipeline import PipelineReal
 from app.modules.orchestrator.orquestador import Orquestador
-from app.modules.orchestrator.puertos import IdentificadorSimulado, PipelineSimulado
+from app.modules.orchestrator.puertos import Identificador, IdentificadorSimulado, PipelineImagenes, PipelineSimulado
 
 logger = logging.getLogger("app.workers.sqs_consumer")
 
@@ -157,22 +160,31 @@ class Consumidor:
         return total
 
 
+def construir_orquestador(settings: Settings) -> Orquestador:
+    """Con IA simulada, el pipeline y el identificador también lo son; con IA real, usan Rekognition, Bedrock y S3."""
+    s3 = (
+        S3StorageClient(build_boto3_s3_client(), settings.s3_bucket_evidencias)
+        if settings.s3_bucket_evidencias
+        else None
+    )
+    whatsapp, ai = get_whatsapp_client(), get_ai_client()
+    pipeline: PipelineImagenes = PipelineSimulado()
+    identificador: Identificador = IdentificadorSimulado()
+    if settings.integracion_ia == "real":
+        if s3 is None:
+            raise RuntimeError("Con la IA real hace falta S3_BUCKET_EVIDENCIAS")
+        pipeline = PipelineReal(whatsapp, get_moderador(), s3, settings)
+        identificador = IdentificadorIA(ai, s3, settings)
+    return Orquestador(get_conversaciones_store(), whatsapp, ai, pipeline, identificador, s3, settings)
+
+
 def main() -> int:
     configure_logging("INFO")
     settings = get_settings()
     cola = SqsQueueClient(build_boto3_sqs_client(), settings.sqs_queue_url)
     try:
-        orquestador = Orquestador(
-            get_conversaciones_store(),
-            get_whatsapp_client(),
-            get_ai_client(),
-            PipelineSimulado(),  # el pipeline y el identificador reales llegan en el módulo 11
-            IdentificadorSimulado(),
-            S3StorageClient(build_boto3_s3_client(), settings.s3_bucket_evidencias)
-            if settings.s3_bucket_evidencias
-            else None,
-        )
-    except RuntimeError as error:  # p. ej. WhatsApp o IA reales aún no disponibles, o falta la tabla de conversaciones
+        orquestador = construir_orquestador(settings)
+    except RuntimeError as error:  # p. ej. faltan credenciales de WhatsApp o de la IA, o la tabla de conversaciones
         print(str(error), file=sys.stderr)
         return CONFIGURACION
     engine = create_engine(get_database_settings().sqlalchemy_url)

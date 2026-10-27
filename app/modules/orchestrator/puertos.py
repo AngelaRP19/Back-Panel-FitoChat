@@ -1,4 +1,5 @@
-"""Lo que el orquestador necesita de otros módulos, como interfaces. Las implementaciones reales llegan en el módulo 11.
+"""Lo que el orquestador necesita de otros módulos, como interfaces. Las implementaciones reales están en el módulo 11
+(`image_pipeline.pipeline` e `identification.servicio`).
 
 - `PipelineImagenes`: descarga la foto de Meta, la valida (dominio y calidad), la convierte a WebP y la guarda en S3.
 - `Identificador`: calcula la identificación preliminar del caso (RAG + reglas del 50 % y 15 puntos).
@@ -9,6 +10,8 @@ recorrer el flujo completo y llegar al panel sin identificación preliminar (D-0
 
 from dataclasses import dataclass
 from typing import Protocol
+
+from sqlalchemy.orm import Session
 
 
 @dataclass(frozen=True)
@@ -36,7 +39,22 @@ class Identificacion:
 
 
 class Identificador(Protocol):
-    def identificar(self, id_caso: str) -> Identificacion | None: ...
+    def identificar(self, s: Session, id_caso: str) -> Identificacion | None:
+        """Corre dentro de la transacción del mensaje. Devuelve None si no hay con qué (o la IA no respondió)."""
+        ...
+
+
+def tipo_de_evidencia(descripcion: str | None) -> str:
+    """El tipo sale de lo que el productor escribió junto a la foto («fruto», «tallo», «envés»…); sin pista, HOJA."""
+    texto = (descripcion or "").lower()
+    return next(
+        (
+            t
+            for clave, t in (("fruto", "FRUTO"), ("tallo", "TALLO"), ("envés", "ENVES"), ("enves", "ENVES"))
+            if clave in texto
+        ),
+        "HOJA",
+    )
 
 
 class PipelineSimulado:
@@ -51,16 +69,9 @@ class PipelineSimulado:
         self.recibidas.append((id_caso, media_id))
         if media_id in self.rechazar:
             return ResultadoImagen(util=False, motivo=self.rechazar[media_id])
-        texto = (descripcion or "").lower()
-        tipo = next(
-            (
-                t
-                for clave, t in (("fruto", "FRUTO"), ("tallo", "TALLO"), ("envés", "ENVES"), ("enves", "ENVES"))
-                if clave in texto
-            ),
-            "HOJA",
+        return ResultadoImagen(
+            util=True, tipo=tipo_de_evidencia(descripcion), clave_s3=f"simulado/{id_caso}/{media_id}.webp"
         )
-        return ResultadoImagen(util=True, tipo=tipo, clave_s3=f"simulado/{id_caso}/{media_id}.webp")
 
     def eliminar(self, clave_s3: str) -> None:
         self.eliminadas.append(clave_s3)
@@ -69,5 +80,5 @@ class PipelineSimulado:
 class IdentificadorSimulado:
     """No identifica nada: el caso llega al panel sin identificación preliminar."""
 
-    def identificar(self, id_caso: str) -> Identificacion | None:
+    def identificar(self, s: Session, id_caso: str) -> Identificacion | None:
         return None

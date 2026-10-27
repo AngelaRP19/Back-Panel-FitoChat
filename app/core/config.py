@@ -48,9 +48,27 @@ class Settings(BaseSettings):
     max_body_bytes: int = 10 * 1024 * 1024  # propuesto en la guía (§7)
 
     # Identificación preliminar (guía §2): una categoría con menos de este porcentaje no se sugiere.
-    umbral_identificacion_pct: int = 50
+    umbral_coincidencia: int = 50
     # Resultado ambiguo: dos categorías sobre el umbral con menos de estos puntos de diferencia.
-    margen_ambiguedad_pts: int = 15
+    umbral_ambiguo: int = 15
+
+    # IA en otra cuenta AWS (módulo 11): se llega asumiendo un rol. Sin estos datos, el módulo corre en modo simulado.
+    ia_role_arn: str | None = None
+    ia_external_id: SecretStr | None = None
+    ia_region: str = "us-east-1"
+    bedrock_model_vision: str | None = None
+    bedrock_model_text: str | None = None
+    bedrock_model_embed: str | None = None
+    ia_reintentos: int = 2  # intentos por llamada al modelo antes de pedir disculpas y seguir sin él
+    ia_timeout_segundos: int = 30
+    ia_pausa_reintento_segundos: float = 1.0
+    # Moderación de fotos (Rekognition). PROVISIONALES: el criterio de calidad lo valida el técnico de la ANUC con un
+    # conjunto de imágenes clasificado a mano (RQF35).
+    foto_confianza_minima: float = 70.0
+    foto_nitidez_minima: float = 30.0
+    foto_brillo_minimo: float = 15.0
+    foto_brillo_maximo: float = 95.0
+    whatsapp_graph_version: str = "v21.0"
 
     # Conservación de un caso cerrado, con borrado físico al vencer (guía §2). No se amplía (D-07 rechazado).
     meses_conservacion: int = 6
@@ -97,6 +115,16 @@ class Settings(BaseSettings):
             )
             if faltan:
                 problemas.append(f"Con INTEGRACION_WHATSAPP=real son obligatorias: {', '.join(faltan)}")
+        if self.integracion_ia == "real":
+            faltan = _falta(
+                ia_role_arn=self.ia_role_arn,
+                ia_external_id=self.ia_external_id,
+                bedrock_model_vision=self.bedrock_model_vision,
+                bedrock_model_text=self.bedrock_model_text,
+                bedrock_model_embed=self.bedrock_model_embed,
+            )
+            if faltan:
+                problemas.append(f"Con INTEGRACION_IA=real son obligatorias: {', '.join(faltan)}")
         if "*" in self.cors_origenes:
             problemas.append("CORS_ORIGINS debe ser una lista explícita de orígenes, no '*'")
         if problemas:

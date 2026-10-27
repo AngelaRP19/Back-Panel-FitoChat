@@ -54,10 +54,13 @@ app/
 │  └─ logging.py · passwords.py · roles.py · telefonos.py
 ├─ modules/
 │  ├─ webhook/                   # firma, adaptador, encolado
+│  ├─ image_pipeline/            # descarga, validación, WebP y S3 de las fotos
+│  ├─ identification/            # RAG + IA + reglas del 50 % y los 15 puntos
 │  └─ panel_api/cuentas/         # GET /me (los demás dominios se suman por módulo)
 └─ infrastructure/
    ├─ sqs_queue_client.py
-   ├─ s3_storage_client.py       # evidencias: URLs prefirmadas y borrado de todas las versiones
+   ├─ s3_storage_client.py       # evidencias: URLs prefirmadas, descarga y borrado de todas las versiones
+   ├─ ia_credenciales.py · bedrock_client.py · rekognition_client.py   # IA en otra cuenta AWS
    └─ db/                        # base, models/, ids.py, session.py, seed.py, procedimientos.py, cuentas_repository.py
 migrations/                      # Alembic: 0001 esquema inicial, 0002 ajustes del modelo, 0003 objetos SQL
 docs/OBJETOS_SQL.md              # vistas, funciones, procedimientos y triggers del Avance 5
@@ -180,12 +183,24 @@ Cada mensaje que el consumidor recibe pasa por la máquina de estados de `app/mo
 
 Flujo: saludo y consentimiento → finca → cultivo → especie y zona afectada → cuestionario → fotos → resumen y envío.
 
-- **La IA conduce las preguntas de síntomas**: la aplicación no las trae escritas. En cada turno le da a la IA el contexto del caso y la última respuesta, y la IA devuelve la siguiente pregunta, si lo respondido sirve y si está fuera del dominio (`app/infrastructure/ai_client.py`). La app solo conecta y envía los mensajes, y filtra con el guardrail que nunca se recete un tratamiento. Con `INTEGRACION_IA=simulada` no hay IA real: el cuestionario se da por completo y se pasa a pedir las fotos (la IA real llega en el módulo 11).
+- **La IA conduce las preguntas de síntomas**: la aplicación no las trae escritas. En cada turno le da a la IA el contexto del caso y la última respuesta, y la IA devuelve la siguiente pregunta, si lo respondido sirve y si está fuera del dominio (`app/infrastructure/ai_client.py`). La app solo conecta y envía los mensajes, y filtra con el guardrail que nunca se recete un tratamiento. Con `INTEGRACION_IA=simulada` no hay IA real: el cuestionario se da por completo y se pasa a pedir las fotos. Con `real` conduce Bedrock (ver «Pipeline de imágenes e identificación»). Si la IA no responde tras los reintentos (`IA_REINTENTOS`), el bot pide perdón y sigue con las fotos: el técnico revisa el caso.
 - Un número desconocido se registra con consentimiento (P-B08); uno registrado desde el panel debe aceptar el tratamiento de sus datos (D-12). El texto del aviso es provisional (P-B07).
 - Una finca sin cultivos se completa desde WhatsApp (nombre, tipo, especies). Con varias especies en el cultivo, cada consulta es de una sola (P-10).
-- Fotos: hasta 3 por tipo y 12 en total; mínimo 1 útil. Las valida un pipeline de imágenes (interfaz; simulado hasta el módulo 11). Un caso llega a **Pendiente de revisión** solo con el cuestionario completo y al menos una foto válida.
+- Fotos: hasta 3 por tipo y 12 en total; mínimo 1 útil. Las valida el pipeline de imágenes (simulado con `INTEGRACION_IA=simulada`). Un caso llega a **Pendiente de revisión** solo con el cuestionario completo y al menos una foto válida.
 - `/salir` pide confirmación y, si confirma, borra el caso con todos sus datos y fotos. Cada mensaje reinicia el conteo de inactividad; responder tras la advertencia de 48 h retoma donde se quedó.
 - Todos los textos del bot están en `app/modules/orchestrator/textos.py`.
+
+## Pipeline de imágenes e identificación
+
+Con `INTEGRACION_IA=real` y `INTEGRACION_WHATSAPP=real` el consumidor usa los clientes reales (`construir_orquestador` en `app/workers/sqs_consumer.py`); con `simulada` todo sigue funcionando sin salir a internet.
+
+**Fotos** (`app/modules/image_pipeline/pipeline.py`): descarga de WhatsApp (Graph API, en dos pasos y con el token) → formato y tamaño del **original** (JPEG o PNG, máximo 5 MB: es lo que Rekognition acepta como bytes) → brillo y nitidez → moderación y dominio con Rekognition (sin contenido inapropiado y que sea una planta) → WebP sin metadatos EXIF y con la orientación corregida → `s3://<bucket>/evidencias/<año>/<mes>/<id>.webp`. Una foto rechazada no se guarda y se le dice al productor por qué. Si falla un servicio (Rekognition, S3), el error sube y el consumidor reintenta el mensaje.
+
+**Identificación preliminar** (`app/modules/identification/`): al enviar el caso se busca en `conocimiento_embeddings` (pgvector, distancia coseno) el conocimiento más cercano a los síntomas (RAG) y se le pasa a la IA junto con las respuestas y las fotos. La IA estima el *porcentaje de coincidencia de síntomas* por categoría y `reglas.py` decide el resultado: **identificado** si una categoría llega a `UMBRAL_COINCIDENCIA` (50); **ambiguo** si dos llegan y se llevan menos de `UMBRAL_AMBIGUO` (15) puntos (con 15 exactos ya hay ganadora); **no identificado** si ninguna llega. Siempre es preliminar. Todo texto de la IA pasa por el guardrail (sin tratamientos ni «confianza», «probabilidad» o «certeza»). Si la IA no responde, el caso llega al panel sin identificación (D-03).
+
+**IA en otra cuenta** (`ia_credenciales.py`): `sts:AssumeRole` sobre `IA_ROLE_ARN` con `IA_EXTERNAL_ID`; las credenciales (1 hora) se renuevan 5 minutos antes de vencer y los clientes de Bedrock y Rekognition se recrean con las nuevas. Modelos: `BEDROCK_MODEL_VISION`, `BEDROCK_MODEL_TEXT`, `BEDROCK_MODEL_EMBED`. Los umbrales de calidad de foto (`FOTO_*`) son **provisionales**: se validan con el técnico de la ANUC.
+
+Esto no se pudo probar contra AWS ni Meta reales: las pruebas usan dobles (clientes falsos, `httpx.MockTransport`, moto). La primera prueba con los servicios reales es parte del despliegue.
 
 ## Tests, lint y tipos
 

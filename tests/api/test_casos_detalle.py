@@ -387,7 +387,7 @@ def test_el_umbral_sale_de_la_configuracion(
 
     id_caso = crear_caso(migrated, mundo.cultivo1, "GULUPA", "Pendiente de revisión")
     crear_identificacion(migrated, id_caso, "PRELIMINAR", {"TRIPS": 80, "BOTRYTIS": 20}, DETALLE)
-    ajustes = config.get_settings().model_copy(update={"umbral_identificacion_pct": 15})
+    ajustes = config.get_settings().model_copy(update={"umbral_coincidencia": 15})
     monkeypatch.setattr("app.modules.panel_api.casos.service.get_settings", lambda: ajustes)
     e = pedir(api, mundo.lider, f"{URL}/{id_caso}/explicacion")
     assert e["cercanas"] == []  # con el 15 % de umbral, el 20 % de Botrytis ya no es «cercana»

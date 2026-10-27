@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import boto3
 import pytest
 from botocore.config import Config
+from botocore.exceptions import ClientError
 from moto import mock_aws
 
 from app.infrastructure.s3_storage_client import ErrorBorradoS3, S3StorageClient
@@ -28,6 +29,18 @@ def s3() -> Iterator[tuple[S3StorageClient, Any]]:
 def _versiones(crudo: Any) -> list[dict[str, Any]]:
     respuesta = crudo.list_object_versions(Bucket=BUCKET)
     return [*respuesta.get("Versions", []), *respuesta.get("DeleteMarkers", [])]
+
+
+def test_descarga_el_contenido_de_un_objeto(s3: tuple[S3StorageClient, Any]) -> None:
+    cliente, _ = s3
+    cliente.subir(CLAVE, b"foto-del-caso")
+    assert cliente.descargar(CLAVE) == b"foto-del-caso"
+
+
+def test_descarga_de_un_objeto_que_no_existe_falla(s3: tuple[S3StorageClient, Any]) -> None:
+    cliente, _ = s3
+    with pytest.raises(ClientError):
+        cliente.descargar("evidencias/2026/10/no-existe.webp")
 
 
 def test_sube_y_encuentra_un_objeto(s3: tuple[S3StorageClient, Any]) -> None:

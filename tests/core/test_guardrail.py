@@ -1,6 +1,6 @@
 import pytest
 
-from app.core.guardrail import MENSAJE_BLOQUEADO, recomienda_tratamiento
+from app.core.guardrail import MENSAJE_BLOQUEADO, es_seguro, recomienda_tratamiento, usa_terminos_prohibidos
 
 
 @pytest.mark.parametrize(
@@ -43,3 +43,30 @@ def test_ignora_tildes_y_mayusculas() -> None:
 
 def test_el_mensaje_de_error_es_claro() -> None:
     assert "productos, dosis ni tratamientos" in MENSAJE_BLOQUEADO
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "Tengo una confianza del 80 %",
+        "Hay una probabilidad alta de roña",
+        "Es probable que sea trips",
+        "Es probablemente Fusarium",
+        "Tengo certeza de que es Botrytis",
+        "Estoy seguro de que es roña",
+        "CONFIANZA ALTA",
+    ],
+)
+def test_los_terminos_de_certeza_se_detectan(texto: str) -> None:
+    assert usa_terminos_prohibidos(texto) and not es_seguro(texto)
+
+
+def test_el_porcentaje_de_coincidencia_de_sintomas_es_seguro() -> None:
+    texto = "Coincidencia de síntomas con roña: 72 %. La identificación es preliminar."
+    assert not usa_terminos_prohibidos(texto) and es_seguro(texto)
+
+
+def test_un_texto_seguro_exige_pasar_ambos_filtros() -> None:
+    assert not es_seguro("Aplique 2 ml por litro")  # receta
+    assert not es_seguro("Probabilidad alta")  # promete certeza
+    assert es_seguro("Las manchas coinciden con las de la roña")

@@ -281,3 +281,40 @@ def test_del_webhook_al_consumidor(bd: Engine, sqs: tuple[Any, str], client: Tes
     assert manejador.vistos == ["wamid.E2E"]
     [fila] = filas(bd, "SELECT telefono, tipo FROM mensajes_whatsapp")
     assert (fila["telefono"], fila["tipo"]) == (PHONE, "text")
+
+
+# --- Armado del orquestador según la integración de IA (módulo 11) ----------------------------------------------
+
+
+def _armar(monkeypatch: pytest.MonkeyPatch, **cambios: Any) -> Any:
+    from app.infrastructure.ai_client import AiSimulado
+    from app.infrastructure.conversaciones_store import ConversacionesEnMemoria
+    from app.infrastructure.rekognition_client import ModeradorSimulado
+    from app.infrastructure.whatsapp_client import WhatsAppSimulado
+
+    monkeypatch.setattr(sqs_consumer, "get_ai_client", lambda: AiSimulado())
+    monkeypatch.setattr(sqs_consumer, "get_whatsapp_client", lambda: WhatsAppSimulado())
+    monkeypatch.setattr(sqs_consumer, "get_conversaciones_store", lambda: ConversacionesEnMemoria())
+    monkeypatch.setattr(sqs_consumer, "get_moderador", lambda: ModeradorSimulado())
+    monkeypatch.setattr(sqs_consumer, "build_boto3_s3_client", lambda: object())
+    return sqs_consumer.construir_orquestador(config.get_settings().model_copy(update=cambios))
+
+
+def test_con_ia_simulada_el_pipeline_y_el_identificador_son_simulados(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.modules.orchestrator.puertos import IdentificadorSimulado, PipelineSimulado
+
+    orq = _armar(monkeypatch, integracion_ia="simulada")
+    assert isinstance(orq.pipeline, PipelineSimulado) and isinstance(orq.identificador, IdentificadorSimulado)
+
+
+def test_con_ia_real_se_usan_el_pipeline_y_el_identificador_reales(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.modules.identification.servicio import IdentificadorIA
+    from app.modules.image_pipeline.pipeline import PipelineReal
+
+    orq = _armar(monkeypatch, integracion_ia="real", s3_bucket_evidencias="bucket-de-prueba")
+    assert isinstance(orq.pipeline, PipelineReal) and isinstance(orq.identificador, IdentificadorIA)
+
+
+def test_con_ia_real_sin_bucket_no_arranca(monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(RuntimeError, match="S3_BUCKET_EVIDENCIAS"):
+        _armar(monkeypatch, integracion_ia="real", s3_bucket_evidencias=None)

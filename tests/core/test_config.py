@@ -181,3 +181,22 @@ def test_flag_invalido_se_rechaza() -> None:
         _settings(integracion_ia="parcial")
     with pytest.raises(ValidationError):
         _settings(app_env="staging")
+
+
+def test_ia_real_exige_rol_external_id_y_modelos() -> None:
+    with pytest.raises(ValidationError, match="IA_ROLE_ARN|ia_role_arn"):
+        _settings(integracion_ia="real")
+    ok = _settings(
+        integracion_ia="real",
+        ia_role_arn="arn:aws:iam::111122223333:role/ia",
+        ia_external_id="externo",
+        bedrock_model_vision="v",
+        bedrock_model_text="t",
+        bedrock_model_embed="e",
+    )
+    assert ok.integracion_ia == "real"
+
+
+def test_los_umbrales_de_identificacion_son_los_de_la_guia() -> None:
+    ajustes = _settings()
+    assert (ajustes.umbral_coincidencia, ajustes.umbral_ambiguo) == (50, 15)

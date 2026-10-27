@@ -256,6 +256,19 @@ def fotos_por_tipo(s: Session, id_caso: str) -> dict[str, int]:
     return {str(t): int(n) for t, n in filas}
 
 
+def rutas_de_fotos(s: Session, id_caso: str) -> list[str]:
+    """Claves S3 de las fotos útiles del caso, en el orden en que llegaron."""
+    filas = s.scalars(
+        text(
+            "SELECT f.ruta_fotografia FROM fotografias f JOIN respuestas r ON r.id_respuesta = f.id_respuesta "
+            "JOIN diagnosticos d ON d.id_diagnostico = r.id_diagnostico WHERE d.id_caso = :c AND f.es_util = 'S' "
+            "ORDER BY f.fecha_envio_fotografia, f.ruta_fotografia"
+        ),
+        {"c": id_caso},
+    )
+    return [str(x) for x in filas]
+
+
 def guardar_foto(s: Session, id_caso: str, tipo: str, clave: str, descripcion: str | None) -> None:
     id_respuesta = guardar_respuesta(s, id_caso, PREGUNTA_FOTO, descripcion or "Fotografía enviada")
     s.add(

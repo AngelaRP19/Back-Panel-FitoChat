@@ -49,6 +49,10 @@ RESPONDE_CON_NUMERO = "Responde con el número de la opción."
 CUESTIONARIO_INICIO = "Voy a hacerte unas preguntas sobre lo que ves."
 FUERA_DE_DOMINIO = "Solo puedo ayudarte con problemas fitosanitarios de tus cultivos de gulupa, granadilla y maracuyá."
 SIN_PREGUNTA = "Gracias por tus respuestas."
+IA_NO_DISPONIBLE = (
+    "Disculpa, no pude hacerte más preguntas en este momento. Sigamos con las fotos y un técnico de la ANUC "
+    "revisará tu caso."
+)
 PREGUNTA_BLOQUEADA = "Prefiero no responder eso. Un técnico de la ANUC revisará tu caso."
 
 # --- Fotos ---------------------------------------------------------------------------------------
@@ -74,6 +78,10 @@ ENVIADO = (
     "Esta orientación es preliminar y no reemplaza el diagnóstico del técnico."
 )
 RESULTADO_PRELIMINAR = "Según lo que me contaste, el resultado preliminar es: {resultado}."
+RESULTADO_AMBIGUO = (
+    "Según lo que me contaste, tus síntomas se parecen a más de una posibilidad ({primera} y {segunda}). "
+    "El técnico lo definirá."
+)
 NO_ENVIADO = "Está bien. Puedes enviar más fotos y cuando termines escribe LISTO."
 
 # --- Salir, abandonar y reanudar -----------------------------------------------------------------
