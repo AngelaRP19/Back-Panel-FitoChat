@@ -8,7 +8,7 @@ import io
 import re
 from collections import Counter
 from collections.abc import Iterator
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import boto3
@@ -245,11 +245,14 @@ def test_el_caso_descartado_y_el_del_chatbot_tienen_su_historia(demo_db: Session
 
 
 def test_los_casos_del_chatbot_para_los_jobs_de_inactividad(demo_db: Session) -> None:
+    # La vista mide contra now() real y la siembra parte de AHORA fijo: se descuenta lo transcurrido desde AHORA.
+    transcurridas = (datetime.now(UTC) - AHORA).total_seconds() / 3600
     horas = sorted(
-        round(float(f["horas_inactivo"])) for f in filas(demo_db, "SELECT horas_inactivo FROM vw_ultima_actividad_caso")
+        round(float(f["horas_inactivo"]) - transcurridas)
+        for f in filas(demo_db, "SELECT horas_inactivo FROM vw_ultima_actividad_caso")
     )
     assert len(horas) == 4
-    assert horas[0] in range(1, 4) and 4 <= horas[1] <= 6 and 48 <= horas[2] <= 52 and 58 <= horas[3] <= 62
+    assert 1 <= horas[0] <= 4 and 4 <= horas[1] <= 6 and 48 <= horas[2] <= 52 and 58 <= horas[3] <= 62
     assert (
         escalar(demo_db, "SELECT count(*) FROM vw_ultima_actividad_caso WHERE advertencia_inactividad_enviada = 'S'")
         == 1
