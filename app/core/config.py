@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     # Resultado ambiguo: dos categorías sobre el umbral con menos de estos puntos de diferencia.
     margen_ambiguedad_pts: int = 15
 
+    # Conservación de un caso cerrado, con borrado físico al vencer (guía §2). No se amplía (D-07 rechazado).
+    meses_conservacion: int = 6
+
     whatsapp_verify_token: SecretStr
     whatsapp_app_secret: SecretStr
     whatsapp_access_token: SecretStr | None = None

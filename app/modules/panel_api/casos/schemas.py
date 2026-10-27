@@ -1,7 +1,7 @@
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field
 
 from app.core.catalogos_api import (
     EspecieCultivo,
@@ -14,6 +14,22 @@ from app.core.catalogos_api import (
 )
 
 CodigoCategoria = Literal["BOTRYTIS", "RONA", "DEFICIENCIA_MAGNESIO", "TRIPS", "FUSARIUM"]
+
+
+def _texto_opcional(valor: str | None) -> str | None:
+    """Recorta el texto; vacío es lo mismo que no enviarlo."""
+    return (valor.strip() or None) if valor is not None else None
+
+
+class DiagnosticoIn(BaseModel):
+    """Diagnóstico del técnico. La categoría solo cuenta para `CONFIRMADO` y `OTRA_PATOLOGIA`; el motivo, para
+    `REQUIERE_VISITA`."""
+
+    resultado_tecnico: ResultadoTecnico
+    categoria_determinada: CodigoCategoria | None = None
+    motivo_visita: Annotated[str | None, Field(max_length=500), AfterValidator(_texto_opcional)] = None
+    descripcion: Annotated[str | None, Field(max_length=1000), AfterValidator(_texto_opcional)] = None
+    observaciones: Annotated[str | None, Field(max_length=1000), AfterValidator(_texto_opcional)] = None
 
 
 class AsignarIn(BaseModel):

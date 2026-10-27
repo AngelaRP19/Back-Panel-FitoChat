@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.paginacion import ParametrosPagina
 from app.core.catalogos_api import CATEGORIAS, ESPECIES, ESTADOS_CASO, EstadoCaso
+from app.infrastructure.db import procedimientos as sp
 from app.infrastructure.db.models import Asignacion
 from app.modules.panel_api.cuentas.repository import normalizar_busqueda
 from app.modules.panel_api.territorio_comun import nombres_de_vereda, sin_tildes
@@ -519,3 +520,65 @@ async def navegacion(session: AsyncSession, alcance: Alcance) -> tuple[int, int]
         {"e": ESTADOS_CASO.a_nombre(EstadoCaso.EN_REVISION), "t": alcance.id_usuario},
     )
     return int(pendientes or 0), 0
+
+
+# --- Diagnóstico y cierre ------------------------------------------------------------------------------------------
+
+
+async def categoria_transmisible(session: AsyncSession, id_categoria: str) -> bool:
+    return (
+        await session.scalar(
+            text("SELECT es_transmisible = 'S' FROM categorias_fitosanitarias WHERE id_categoria = :c"),
+            {"c": id_categoria},
+        )
+    ) is True
+
+
+async def id_categoria(session: AsyncSession, codigo: str) -> str | None:
+    """Id de la categoría a partir de su código de la API (se resuelve por nombre, nunca se escribe en el código)."""
+    id_categoria = await session.scalar(
+        text("SELECT id_categoria FROM categorias_fitosanitarias WHERE nombre_categoria = :n"),
+        {"n": CATEGORIAS.a_nombre(codigo)},
+    )
+    return None if id_categoria is None else str(id_categoria)
+
+
+async def registrar_diagnostico(
+    session: AsyncSession,
+    id_caso: str,
+    id_tecnico: str,
+    resultado: str,
+    id_categoria: str | None,
+    motivo_visita: str | None,
+    descripcion: str | None,
+    observaciones: str | None,
+) -> None:
+    """`sp_registrar_diagnostico`: completa la fila vacía y pasa el caso a Registrado, con evento y auditoría."""
+    await session.execute(
+        sp.REGISTRAR_DIAGNOSTICO,
+        sp.parametros_diagnostico(
+            id_caso,
+            id_tecnico,
+            resultado,
+            id_categoria=id_categoria,
+            motivo_visita=motivo_visita,
+            descripcion=descripcion,
+        ),
+    )
+    if observaciones is not None:  # el procedimiento no las guarda: se agregan en la misma transacción
+        await session.execute(
+            text("UPDATE diagnosticos SET observaciones_diagnostico = :o WHERE id_caso = :c"),
+            {"o": observaciones, "c": id_caso},
+        )
+
+
+async def evaluar_alerta(session: AsyncSession, id_categoria: str) -> None:
+    await session.execute(sp.EVALUAR_ALERTA, {"id_categoria": id_categoria, "fecha": None})
+
+
+async def cerrar_caso(session: AsyncSession, id_caso: str, actor_tipo: str, actor_id: str, meses: int) -> None:
+    """`sp_cerrar_caso`: Registrado → Cerrado y fija `vence_en` = cierre + meses de conservación."""
+    await session.execute(
+        sp.CERRAR_CASO,
+        {"id_caso": id_caso, "actor_tipo": actor_tipo, "actor_id": actor_id, "meses": meses, "fecha": None},
+    )

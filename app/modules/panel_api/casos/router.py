@@ -1,7 +1,7 @@
 """Casos del panel (guía §10.4): bandeja, conteos, detalle, partes del caso y asignación.
 
 El líder ve todos los casos; el técnico, solo los asignados. Lo ajeno responde `404`, igual que lo inexistente.
-El diagnóstico y el cierre llegan en el módulo 5.
+El diagnóstico y el cierre (módulo 5) son los POST al final.
 """
 
 import logging
@@ -25,6 +25,7 @@ from app.modules.panel_api.casos.schemas import (
     CasoResumen,
     ConteosCasos,
     CuestionarioOut,
+    DiagnosticoIn,
     EventoOut,
     EvidenciaOut,
     ExplicacionOut,
@@ -45,6 +46,7 @@ RESPUESTAS: dict[int | str, dict[str, object]] = {
 
 Usuario = Annotated[UsuarioActual, Depends(requiere_rol(Rol.LIDER_TECNICO, Rol.TECNICO))]
 SoloLider = Annotated[UsuarioActual, Depends(requiere_rol(Rol.LIDER_TECNICO))]
+SoloTecnico = Annotated[UsuarioActual, Depends(requiere_rol(Rol.TECNICO))]
 
 
 def get_s3_opcional() -> S3StorageClient | None:
@@ -157,3 +159,22 @@ async def asignar_caso(id_caso: str, datos: AsignarIn, actor: SoloLider, servici
     TRANSICION_INVALIDA` si el caso ya está Registrado, Cerrado o Descartado.
     """
     return await servicio.asignar(actor, id_caso, datos.tecnico_id)
+
+
+@router.post("/{id_caso}/diagnostico", response_model=CasoDetalle, responses=RESPUESTAS)
+async def registrar_diagnostico(
+    id_caso: str, datos: DiagnosticoIn, actor: SoloTecnico, servicio: Servicio
+) -> CasoDetalle:
+    """Diagnóstico del técnico: completa la fila vacía y pasa el caso de En revisión a Registrado.
+
+    Solo el técnico de la asignación vigente (el líder recibe `403`; otro técnico, `404`). `CONFIRMADO` solo si la
+    identificación fue preliminar (P-04); `OTRA_PATOLOGIA` exige categoría y `REQUIERE_VISITA`, el motivo. Una
+    categoría transmisible registrada evalúa las alertas.
+    """
+    return await servicio.diagnosticar(actor, id_caso, datos)
+
+
+@router.post("/{id_caso}/cierre", response_model=CasoDetalle, responses=RESPUESTAS)
+async def cerrar_caso(id_caso: str, actor: Usuario, servicio: Servicio) -> CasoDetalle:
+    """Solo desde Registrado → Cerrado; `vence_en` = cierre + 6 meses. Un caso cerrado no se reabre."""
+    return await servicio.cerrar(actor, id_caso)

@@ -14,7 +14,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.errors import ApiError
 from app.api.paginacion import ParametrosPagina
-from app.core.catalogos_api import CATEGORIAS, ESPECIES, ESTADOS_CASO, EstadoCaso, ResultadoAnalisis, normalizar_codigo
+from app.core.catalogos_api import (
+    CATEGORIAS,
+    ESPECIES,
+    ESTADOS_CASO,
+    EstadoCaso,
+    ResultadoAnalisis,
+    ResultadoTecnico,
+    normalizar_codigo,
+)
 from app.core.codigos import codigo_caso
 from app.core.config import get_settings
 from app.core.roles import Rol
@@ -37,6 +45,7 @@ from app.modules.panel_api.casos.schemas import (
     CultivoCaso,
     CultivoDetalle,
     DescartaOut,
+    DiagnosticoIn,
     DiagnosticoOut,
     EventoOut,
     EvidenciaOut,
@@ -385,6 +394,121 @@ class CasosService:
             raise
         fila = await self._fila_o_404(actor, id_caso)
         return a_resumen(fila)
+
+    # --- Diagnóstico y cierre ----------------------------------------------------------------------------------------
+
+    async def diagnosticar(self, actor: UsuarioActual, id_caso: str, datos: DiagnosticoIn) -> CasoDetalle:
+        """Completa el diagnóstico (En revisión → Registrado). Solo el técnico de la asignación vigente.
+
+        `CONFIRMADO` confirma la categoría que propuso la identificación preliminar (P-04); si esa identificación
+        fue ambigua o no identificó nada, el técnico usa `OTRA_PATOLOGIA` y elige la categoría. Tras registrar una
+        categoría transmisible se evalúan las alertas, en la misma transacción.
+        """
+        fila = await self._fila_o_404(actor, id_caso)  # el técnico ajeno o con la asignación cerrada recibe 404
+        estado = _estado(fila)
+        if estado is not EstadoCaso.EN_REVISION:
+            ya_tiene = estado in (EstadoCaso.REGISTRADO, EstadoCaso.CERRADO)
+            raise ApiError(
+                409,
+                "TRANSICION_INVALIDA",
+                "Este caso ya tiene diagnóstico."
+                if ya_tiene
+                else "El caso debe estar En revisión para diagnosticarlo.",
+            )
+        categoria, motivo = self._validar_diagnostico(datos, fila)
+        try:
+            id_categoria = await repo.id_categoria(self.session, categoria) if categoria else None
+            await repo.registrar_diagnostico(
+                self.session,
+                id_caso,
+                actor.id,
+                datos.resultado_tecnico.value,
+                id_categoria,
+                motivo,
+                datos.descripcion,
+                datos.observaciones,
+            )
+            if id_categoria and await repo.categoria_transmisible(self.session, id_categoria):
+                await repo.evaluar_alerta(self.session, id_categoria)
+            await self.session.commit()
+        except DBAPIError as error:
+            await self.session.rollback()
+            raise _traducir(error) from None
+        return await self.detalle(actor, id_caso)
+
+    @staticmethod
+    def _validar_diagnostico(datos: DiagnosticoIn, fila: CasoFila) -> tuple[str | None, str | None]:
+        """(categoría que se guarda, motivo que se guarda); `422` con los campos que fallan."""
+        campos: dict[str, str] = {}
+        resultado = datos.resultado_tecnico
+        categoria: str | None = datos.categoria_determinada
+        motivo = datos.motivo_visita
+        if resultado is ResultadoTecnico.CONFIRMADO:
+            propuesta = (
+                CATEGORIAS.a_codigo(fila.nombre_categoria_principal)
+                if fila.resultado_analisis == ResultadoAnalisis.PRELIMINAR.value and fila.nombre_categoria_principal
+                else None
+            )
+            if propuesta is None:
+                campos["resultado_tecnico"] = (
+                    "Solo se confirma una identificación preliminar. Elige «otra patología» e indica la categoría."
+                )
+            elif categoria is not None and categoria != propuesta:
+                campos["categoria_determinada"] = (
+                    "Para confirmar usa la categoría propuesta; si es otra, elige «otra patología»."
+                )
+            categoria = propuesta
+        elif resultado is ResultadoTecnico.OTRA_PATOLOGIA:
+            if categoria is None:
+                campos["categoria_determinada"] = "Selecciona la categoría fitosanitaria que determinaste."
+        else:
+            categoria = None  # sin una categoría determinada no hay nada que guardar
+        if resultado is ResultadoTecnico.REQUIERE_VISITA:
+            if motivo is None:
+                campos["motivo_visita"] = "Escribe el motivo de la visita."
+        else:
+            motivo = None
+        if campos:
+            raise ApiError(422, "VALIDACION", "Revisa los campos marcados.", campos)
+        return categoria, motivo
+
+    async def cerrar(self, actor: UsuarioActual, id_caso: str) -> CasoDetalle:
+        """Registrado → Cerrado, con el vencimiento de conservación. Líder: cualquiera; técnico: los suyos."""
+        fila = await self._fila_o_404(actor, id_caso)
+        estado = _estado(fila)
+        if estado is not EstadoCaso.REGISTRADO:
+            raise ApiError(
+                409,
+                "TRANSICION_INVALIDA",
+                "El caso ya está cerrado."
+                if estado is EstadoCaso.CERRADO
+                else "Guarda el diagnóstico técnico antes de cerrar el caso.",
+            )
+        try:
+            await repo.cerrar_caso(
+                self.session,
+                id_caso,
+                "LIDER" if actor.rol is Rol.LIDER_TECNICO else "TECNICO",
+                actor.id,
+                get_settings().meses_conservacion,
+            )
+            await self.session.commit()
+        except DBAPIError as error:
+            await self.session.rollback()
+            raise _traducir(error) from None
+        return await self.detalle(actor, id_caso)
+
+
+def _traducir(error: DBAPIError) -> ApiError | DBAPIError:
+    """Los errores de negocio de los procedimientos SQL (AN001…AN004) pasan a la respuesta de la API."""
+    negocio = sp.error_de_negocio(error)
+    if negocio is sp.SqlState.TRANSICION_INVALIDA:
+        return ApiError(409, "TRANSICION_INVALIDA", "El caso ya no está en el estado que exige esta acción.")
+    if negocio in (sp.SqlState.NO_ES_EL_TECNICO_ASIGNADO, sp.SqlState.NO_ENCONTRADO):
+        return no_encontrado()  # perdió la asignación mientras tanto: para él el caso ya no existe
+    if negocio is sp.SqlState.DATOS_INVALIDOS:
+        return ApiError(422, "VALIDACION", "Revisa los campos marcados.")
+    return error
 
 
 def _detalle_json(ident: dict[str, Any]) -> dict[str, dict[str, Any]]:
