@@ -22,6 +22,7 @@ from app.infrastructure.db.session import get_session
 from app.main import app
 from app.modules.panel_api.cuentas.router_auth import LIMITADOR_VERIFICAR_CORREO
 from tests.conftest import _sesion_por_solicitud, con_token
+from tests.db_fixtures import reiniciar_secuencias_cortas
 
 TABLAS_DE_CUENTAS = (
     "estados, categorias_fitosanitarias, especies, productores, tecnicos, lideres_tecnicos, auditoria, "
@@ -30,8 +31,11 @@ TABLAS_DE_CUENTAS = (
 
 
 def vaciar(motor: Engine) -> None:
+    """Vacía las tablas y reinicia las secuencias de catálogo (3 dígitos): cada prueba vuelve a sembrarlas y, como
+    TRUNCATE no las reinicia, tras unos 140 siembras `seq_estados` (ES001..ES999) se agotaría."""
     with motor.begin() as conexion:
         conexion.execute(text(f"TRUNCATE {TABLAS_DE_CUENTAS} CASCADE"))
+        reiniciar_secuencias_cortas(conexion)
 
 
 @dataclass

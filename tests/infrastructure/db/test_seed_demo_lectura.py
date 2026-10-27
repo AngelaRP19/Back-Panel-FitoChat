@@ -24,7 +24,7 @@ from app.infrastructure.db import procedimientos as sp
 from app.infrastructure.db import seed_demo as demo
 from app.infrastructure.db.seed_demo import MARCA
 from app.infrastructure.s3_storage_client import S3StorageClient
-from tests.db_fixtures import _reiniciar_secuencias_cortas
+from tests.db_fixtures import reiniciar_secuencias_cortas
 from tests.infrastructure.db.demo_helpers import AHORA, BUCKET, TODOS, escalar, filas, versiones
 
 
@@ -38,7 +38,7 @@ def compartido(migrated: Engine) -> Iterator[tuple[Session, S3StorageClient, Any
         s3 = S3StorageClient(crudo, BUCKET)
         with migrated.connect() as conexion:
             transaccion = conexion.begin()
-            _reiniciar_secuencias_cortas(conexion)
+            reiniciar_secuencias_cortas(conexion)
             with Session(bind=conexion) as session:
                 resultado = demo.sembrar(session, s3, AHORA)
                 session.execute(sp.ESTABLECER_AHORA, {"ahora": AHORA.isoformat()})

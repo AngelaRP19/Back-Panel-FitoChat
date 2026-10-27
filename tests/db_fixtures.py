@@ -61,7 +61,7 @@ def migrated(engine: Engine) -> Engine:
     return engine
 
 
-def _reiniciar_secuencias_cortas(connection: Connection) -> None:
+def reiniciar_secuencias_cortas(connection: Connection) -> None:
     """Las secuencias de catálogo tienen 3 dígitos (ES001..ES999) y nextval no se revierte con el rollback: tras unos
     cientos de pruebas se agotarían. ALTER SEQUENCE ... RESTART sí es transaccional, así que cada prueba arranca en 1
     y al revertirse la transacción la secuencia vuelve a su valor."""
@@ -75,7 +75,7 @@ def conn(migrated: Engine) -> Iterator[Connection]:
     """Conexión con transacción que se revierte al final: cada test deja la base limpia."""
     with migrated.connect() as connection:
         transaction = connection.begin()
-        _reiniciar_secuencias_cortas(connection)
+        reiniciar_secuencias_cortas(connection)
         yield connection
         transaction.rollback()
 
