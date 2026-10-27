@@ -1,6 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
     CheckConstraint,
@@ -11,6 +11,7 @@ from sqlalchemy import (
     PrimaryKeyConstraint,
     String,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.db.base import Base
@@ -28,6 +29,8 @@ class IdentificacionPreliminar(Base):
     tipo_resultado: Mapped[str] = mapped_column(String(30), nullable=False)
     explicacion_resultado: Mapped[str] = mapped_column(String(2000), nullable=False)
     fecha_analisis: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # D-14: síntomas que coinciden y que descartan cada categoría; explicacion_resultado queda como resumen.
+    detalle_explicacion: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
     coincidencias: Mapped[list["CoincidenciaCategoria"]] = relationship(
         back_populates="identificacion", cascade="all, delete-orphan"

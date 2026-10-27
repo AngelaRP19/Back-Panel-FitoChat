@@ -16,7 +16,8 @@ from app.infrastructure.db.base import Base
 
 if TYPE_CHECKING:
     from app.infrastructure.db.models.auditoria import Auditoria
-    from app.infrastructure.db.models.diagnostico import Diagnostico
+    from app.infrastructure.db.models.casos import Asignacion
+    from app.infrastructure.db.models.epidemiologia import Alerta
 
 
 class Tecnico(Base):
@@ -37,7 +38,8 @@ class Tecnico(Base):
     fecha_registro_tecnico: Mapped[date] = mapped_column(Date, nullable=False)
     cognito_sub: Mapped[str | None] = mapped_column(String(64))
 
-    diagnosticos: Mapped[list["Diagnostico"]] = relationship(back_populates="tecnico")
+    asignaciones: Mapped[list["Asignacion"]] = relationship(back_populates="tecnico")
+    registros_auditoria: Mapped[list["Auditoria"]] = relationship(back_populates="tecnico")
 
 
 class LiderTecnico(Base):
@@ -58,3 +60,9 @@ class LiderTecnico(Base):
     cognito_sub: Mapped[str | None] = mapped_column(String(64))
 
     registros_auditoria: Mapped[list["Auditoria"]] = relationship(back_populates="lider_tecnico")
+    alertas_gestionadas: Mapped[list["Alerta"]] = relationship(
+        back_populates="lider_gestion", foreign_keys="Alerta.id_lider_gestion"
+    )
+    alertas_corregidas: Mapped[list["Alerta"]] = relationship(
+        back_populates="lider_correccion", foreign_keys="Alerta.id_lider_correccion"
+    )

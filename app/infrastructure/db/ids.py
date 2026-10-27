@@ -58,6 +58,9 @@ PREFIJOS_ID: dict[str, IdSpec] = {
     "respuestas": IdSpec("RES", 12),
     "fotografias": IdSpec("FOT", 12),
     "auditoria": IdSpec("AUD", 12),
+    # Ajustes aprobados el 26-oct-2026 (migración 0002)
+    "asignaciones": IdSpec("ASG", 12),
+    "alerta_destinatarios": IdSpec("ADE", 12),
     # Extensión de arquitectura
     "mensajes_whatsapp": IdSpec("MSG", 12),
     "conocimiento_embeddings": IdSpec("CON", 12),

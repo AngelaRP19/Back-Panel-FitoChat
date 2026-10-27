@@ -1,11 +1,13 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 from geoalchemy2 import Geometry
 from sqlalchemy import (
+    CheckConstraint,
     Computed,
     Date,
+    DateTime,
     ForeignKeyConstraint,
     Index,
     Numeric,
@@ -21,6 +23,7 @@ if TYPE_CHECKING:
     from app.infrastructure.db.models.arquitectura import MensajeWhatsapp
     from app.infrastructure.db.models.casos import Caso
     from app.infrastructure.db.models.catalogos import Especie
+    from app.infrastructure.db.models.epidemiologia import AlertaDestinatario
 
 
 def ubicacion_column(latitud: str, longitud: str) -> Mapped[Any]:
@@ -49,9 +52,12 @@ class Productor(Base):
     telefono_productor: Mapped[str] = mapped_column(String(15), nullable=False)
     estado_cuenta_productor: Mapped[str] = mapped_column(String(15), nullable=False)
     fecha_registro_productor: Mapped[date] = mapped_column(Date, nullable=False)
+    # D-12: cuándo aceptó el tratamiento de sus datos (Ley 1581 de 2012).
+    fecha_consentimiento: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     fincas: Mapped[list["Finca"]] = relationship(back_populates="productor")
     mensajes_whatsapp: Mapped[list["MensajeWhatsapp"]] = relationship(back_populates="productor")
+    alertas_recibidas: Mapped[list["AlertaDestinatario"]] = relationship(back_populates="productor")
 
 
 class Finca(Base):
@@ -82,6 +88,7 @@ class Cultivo(Base):
         ForeignKeyConstraint(["id_finca"], ["fincas.id_finca"], name="fk_cul_finca"),
         Index("ix_cultivos_finca", "id_finca"),
         Index("ix_cultivos_ubicacion", "ubicacion", postgresql_using="gist"),
+        CheckConstraint("tipo_cultivo IN ('INVERNADERO', 'CAMPO_ABIERTO')", name="tipo_cultivo_valido"),
     )
 
     id_cultivo: Mapped[str] = mapped_column(String(10))
@@ -89,6 +96,8 @@ class Cultivo(Base):
     latitud_cultivo: Mapped[Decimal] = mapped_column(Numeric(9, 6), nullable=False)
     longitud_cultivo: Mapped[Decimal] = mapped_column(Numeric(9, 6), nullable=False)
     id_finca: Mapped[str] = mapped_column(String(10), nullable=False)
+    # D-10: INVERNADERO o CAMPO_ABIERTO.
+    tipo_cultivo: Mapped[str] = mapped_column(String(15), nullable=False)
     ubicacion: Mapped[Any] = ubicacion_column("latitud_cultivo", "longitud_cultivo")
 
     finca: Mapped[Finca] = relationship(back_populates="cultivos")
