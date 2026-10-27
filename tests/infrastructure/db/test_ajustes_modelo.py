@@ -182,7 +182,11 @@ def test_la_ultima_actividad_no_puede_ser_nula(session: Session) -> None:
 
 
 def _diagnostico_vacio(session: Session) -> Diagnostico:
+    """Diagnóstico vacío de un caso con técnico activo asignado (trg_diag_tecnico_activo lo exige para completarlo)."""
     caso = crear_caso(session, escenario(session))
+    session.add(
+        Asignacion(id_caso=caso.id_caso, id_tecnico=crear_tecnico(session).id_tecnico, fecha_asignacion=ahora())
+    )
     diagnostico = Diagnostico(id_caso=caso.id_caso)
     session.add(diagnostico)
     session.flush()
