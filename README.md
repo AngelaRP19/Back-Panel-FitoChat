@@ -2,7 +2,7 @@
 
 API del panel fitosanitario y webhook del asistente de WhatsApp (FastAPI, Python 3.12) para AWS ECS Fargate. Se desarrolla módulo por módulo según `BACKEND_GUIA.md`.
 
-Estado: módulos 0b (operación y despliegue), 1b (ajustes del modelo y semillas v2), 1c (objetos SQL), 1d (datos de demostración) y 2 (cuentas y acceso) listos para revisión. Ya hay configuración, `/api/v1`, CORS, validación de JWT de Cognito, `GET /api/v1/me`, CI, el webhook que encola en SQS y la capa de datos (SQLAlchemy 2 + Alembic sobre PostgreSQL 16 con PostGIS y pgvector) con los ajustes aprobados el 26-oct-2026. Sigue el módulo de productores, fincas y cultivos (3).
+Estado: módulos 0b (operación y despliegue), 1b (ajustes del modelo y semillas v2), 1c (objetos SQL), 1d (datos de demostración), 2 (cuentas y acceso) y 3 (productores, fincas y cultivos) listos para revisión. Ya hay configuración, `/api/v1`, CORS, validación de JWT de Cognito, `GET /api/v1/me`, CI, el webhook que encola en SQS y la capa de datos (SQLAlchemy 2 + Alembic sobre PostgreSQL 16 con PostGIS y pgvector) con los ajustes aprobados el 26-oct-2026. Sigue el módulo de casos: bandeja y detalle (4).
 
 ## Rutas
 
@@ -17,6 +17,10 @@ Estado: módulos 0b (operación y despliegue), 1b (ajustes del modelo y semillas
 | `POST /api/v1/auth/recuperacion/verificar-correo` | pública, 5 por minuto por IP | `{existe}`; `429` con `Retry-After` al excederse. |
 | `PATCH /api/v1/me`, `POST /api/v1/me/contrasena` | Bearer | Editar nombre y celular (el correo no se cambia) y cambiar la contraseña (`204`). |
 | `GET/POST /api/v1/tecnicos`, `GET/PATCH /api/v1/tecnicos/{id}`, `PATCH /api/v1/tecnicos/{id}/estado` | Bearer, solo líder técnico | Administración de cuentas de líderes y técnicos. `GET` admite `q`, `rol`, `activo`, `carga`, `page`, `page_size` y `con_carga=true` (lista para asignar casos). `409 ULTIMA_CUENTA_ACTIVA` si se intenta deshabilitar la última cuenta activa de un rol. |
+| `GET/POST /api/v1/productores`, `GET/PATCH /api/v1/productores/{id}`, `PATCH /api/v1/productores/{id}/estado` | Bearer, solo líder técnico | Productores. `GET` combina `q`, `estado`, `vereda`, `especie`, `con_casos`, `finca`, `desde`, `hasta`, `consulta` (30/90 días) y paginación. Celular único (`409 DUPLICADO`). Deshabilitar no borra casos. |
+| `GET/POST /api/v1/fincas`, `GET/PATCH /api/v1/fincas/{id}`, `GET/POST /api/v1/fincas/{id}/cultivos`, `PATCH /api/v1/cultivos/{id}` | Bearer, solo líder técnico | Fincas y cultivos (`INVERNADERO` o `CAMPO_ABIERTO`, mínimo una especie). Solo se registra finca para un productor activo. Coordenadas raras: `advertencias`, sin bloquear. Quitar una especie que usan casos: `409 ESPECIE_EN_USO` con `detalle`. |
+| `GET /api/v1/especies`, `/categorias`, `/veredas` | Bearer (líder o técnico) | Catálogos. Las veredas son las de las fincas registradas, con su código normalizado. |
+| `GET /api/v1/consulta/productores-fincas`, `GET /api/v1/consulta/productores-fincas/{id}` | Bearer, solo técnico | Productores, fincas y cultivos de **sus** casos (asignación vigente), filtrados en SQL. Lo ajeno responde `404`. |
 | `GET /docs`, `/openapi.json` | — | Solo fuera de `prod`. |
 
 Errores con un solo formato, sin envoltorio: `{"codigo": "...", "mensaje": "...", "campos": {...}}`. Todas las respuestas llevan `X-Request-Id`, cabeceras de seguridad y `Cache-Control: no-store`. El cuerpo de una solicitud no puede superar `MAX_BODY_BYTES` (10 MB; `413` si lo supera).

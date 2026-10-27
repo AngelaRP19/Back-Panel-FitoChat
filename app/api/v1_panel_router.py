@@ -2,11 +2,19 @@
 
 from fastapi import APIRouter
 
+from app.modules.panel_api.consulta.router import router as consulta_router
 from app.modules.panel_api.cuentas.router import router as cuentas_router
 from app.modules.panel_api.cuentas.router_auth import router as auth_router
 from app.modules.panel_api.cuentas.router_tecnicos import router as tecnicos_router
+from app.modules.panel_api.fincas.router import catalogos as catalogos_router
+from app.modules.panel_api.fincas.router import router as fincas_router
+from app.modules.panel_api.productores.router import router as productores_router
 
 router = APIRouter(prefix="/api/v1")
 router.include_router(auth_router)
 router.include_router(cuentas_router)
 router.include_router(tecnicos_router)
+router.include_router(productores_router)
+router.include_router(fincas_router)
+router.include_router(catalogos_router)
+router.include_router(consulta_router)
