@@ -55,6 +55,7 @@ app/
 ├─ modules/
 │  ├─ webhook/                   # firma, adaptador, encolado
 │  ├─ image_pipeline/            # descarga, validación, WebP y S3 de las fotos
+│  ├─ panel_api/reportes/        # reporte de alertas y su exportación a CSV y PDF
 │  ├─ identification/            # RAG + IA + reglas del 50 % y los 15 puntos
 │  └─ panel_api/cuentas/         # GET /me (los demás dominios se suman por módulo)
 └─ infrastructure/
@@ -189,6 +190,19 @@ Flujo: saludo y consentimiento → finca → cultivo → especie y zona afectada
 - Fotos: hasta 3 por tipo y 12 en total; mínimo 1 útil. Las valida el pipeline de imágenes (simulado con `INTEGRACION_IA=simulada`). Un caso llega a **Pendiente de revisión** solo con el cuestionario completo y al menos una foto válida.
 - `/salir` pide confirmación y, si confirma, borra el caso con todos sus datos y fotos. Cada mensaje reinicia el conteo de inactividad; responder tras la advertencia de 48 h retoma donde se quedó.
 - Todos los textos del bot están en `app/modules/orchestrator/textos.py`.
+
+## Reportes (alertas)
+
+Solo el líder técnico. ACTA-003 limitó los reportes a **alertas**, así que `app/modules/panel_api/reportes/` ofrece únicamente ese (el resto del módulo de reportes sigue siendo la propuesta P-01).
+
+| Endpoint | Qué devuelve |
+|---|---|
+| `GET /api/v1/reportes/alertas` | El reporte como indicadores + secciones (barras, tablas y datos), la forma que ya dibuja el panel |
+| `GET /api/v1/reportes/alertas/exportar?formato=csv\|pdf` | El mismo reporte como archivo (`Reporte_alertas_<mes>_<año>.csv` o `.pdf`) |
+
+Filtros (iguales en ambos): `periodo` (`7d`, `30d`, `mes`, `anio`, `personalizado`; sin periodo es `anio`, o `personalizado` si hay `desde`/`hasta`), `desde`, `hasta`, `vereda` (código), `estado_alerta` (lista separada por comas), `decidida` (`sin` o el id del líder), `casos_min` y `comunicada` (`si` o `sin_comunicar`). Fechas invertidas o estados inexistentes dan `422 VALIDACION`.
+
+El reporte trae: alertas generadas, sin decisión, confirmadas, días hasta decidir y productores avisados; alertas por estado, por vereda y por mes; el recorrido de la detección al aviso; el detalle de cada alerta y los parámetros vigentes. El periodo se cuenta por la fecha de generación en hora de Bogotá, con ambos extremos incluidos. La lógica del reporte (`alertas.py`) es una función pura y la exportación (`exportar.py`) usa los mismos datos: el CSV va separado por punto y coma, con BOM y con las fórmulas neutralizadas; el PDF es A4 horizontal (reportlab).
 
 ## Pipeline de imágenes e identificación
 

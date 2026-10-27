@@ -116,6 +116,18 @@ async def listar(
     return filas, total, conteos
 
 
+async def en_periodo(session: AsyncSession, desde: date, hasta: date) -> list[AlertaFila]:
+    """Alertas generadas entre dos fechas de Bogotá (ambas incluidas), las más recientes primero (reportes)."""
+    resultado = await session.execute(
+        text(
+            f"{_SELECT} WHERE (a.fecha_generacion_alerta AT TIME ZONE 'America/Bogota')::date "
+            "BETWEEN :desde AND :hasta ORDER BY a.fecha_generacion_alerta DESC, a.id_alerta DESC"
+        ),
+        {"desde": desde, "hasta": hasta},
+    )
+    return [_fila(dict(r)) for r in resultado.mappings()]
+
+
 async def obtener(session: AsyncSession, id_alerta: str) -> AlertaFila | None:
     resultado = await session.execute(text(f"{_SELECT} WHERE a.id_alerta = :a"), {"a": id_alerta})
     fila = resultado.mappings().first()

@@ -41,5 +41,5 @@ module = ["app.core.*", "app.modules.*"]
 strict = true
 
 [[tool.mypy.overrides]]
-module = ["geoalchemy2.*", "pgvector.*", "moto.*", "boto3.*", "botocore.*"]
+module = ["geoalchemy2.*", "pgvector.*", "moto.*", "boto3.*", "botocore.*", "reportlab.*"]
 ignore_missing_imports = true

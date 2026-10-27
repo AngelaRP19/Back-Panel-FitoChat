@@ -11,6 +11,7 @@ from app.modules.panel_api.cuentas.router_tecnicos import router as tecnicos_rou
 from app.modules.panel_api.fincas.router import catalogos as catalogos_router
 from app.modules.panel_api.fincas.router import router as fincas_router
 from app.modules.panel_api.productores.router import router as productores_router
+from app.modules.panel_api.reportes.router import router as reportes_router
 from app.modules.panel_api.resumen.router import router as resumen_router
 
 router = APIRouter(prefix="/api/v1")
@@ -24,3 +25,4 @@ router.include_router(consulta_router)
 router.include_router(casos_router)
 router.include_router(resumen_router)
 router.include_router(alertas_router)
+router.include_router(reportes_router)
