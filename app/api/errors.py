@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -15,6 +16,7 @@ class ErrorRespuesta(BaseModel):
     codigo: str
     mensaje: str
     campos: dict[str, str] | None = None
+    detalle: list[dict[str, Any]] | None = None
 
 
 class ApiError(Exception):
@@ -27,8 +29,10 @@ class ApiError(Exception):
         mensaje: str,
         campos: dict[str, str] | None = None,
         headers: dict[str, str] | None = None,
+        detalle: list[dict[str, Any]] | None = None,
     ) -> None:
         super().__init__(mensaje)
+        self.detalle = detalle
         self.status_code = status_code
         self.codigo = codigo
         self.mensaje = mensaje
@@ -42,10 +46,13 @@ def error_response(
     mensaje: str,
     campos: dict[str, str] | None = None,
     headers: dict[str, str] | None = None,
+    detalle: list[dict[str, Any]] | None = None,
 ) -> JSONResponse:
     body: dict[str, object] = {"codigo": codigo, "mensaje": mensaje}
     if campos:
         body["campos"] = campos
+    if detalle:
+        body["detalle"] = detalle
     return JSONResponse(status_code=status_code, content=body, headers=headers)
 
 
@@ -62,7 +69,7 @@ _CODIGOS_HTTP: dict[int, tuple[str, str]] = {
 
 async def _api_error_handler(_: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, ApiError)
-    return error_response(exc.status_code, exc.codigo, exc.mensaje, exc.campos, exc.headers)
+    return error_response(exc.status_code, exc.codigo, exc.mensaje, exc.campos, exc.headers, exc.detalle)
 
 
 async def _http_error_handler(_: Request, exc: Exception) -> JSONResponse:
