@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     # Conservación de un caso cerrado, con borrado físico al vencer (guía §2). No se amplía (D-07 rechazado).
     meses_conservacion: int = 6
 
+    # Envío masivo de alertas por WhatsApp: tamaño del lote y pausa entre lotes (límites de la API de Meta).
+    alertas_lote_envio: int = 50
+    alertas_pausa_lote_segundos: float = 1.0
+
     whatsapp_verify_token: SecretStr
     whatsapp_app_secret: SecretStr
     whatsapp_access_token: SecretStr | None = None
