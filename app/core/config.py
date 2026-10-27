@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     cors_origins: str = ""
     max_body_bytes: int = 10 * 1024 * 1024  # propuesto en la guía (§7)
 
+    # Identificación preliminar (guía §2): una categoría con menos de este porcentaje no se sugiere.
+    umbral_identificacion_pct: int = 50
+    # Resultado ambiguo: dos categorías sobre el umbral con menos de estos puntos de diferencia.
+    margen_ambiguedad_pts: int = 15
+
     whatsapp_verify_token: SecretStr
     whatsapp_app_secret: SecretStr
     whatsapp_access_token: SecretStr | None = None
