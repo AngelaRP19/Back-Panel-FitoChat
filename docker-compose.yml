@@ -1,10 +1,16 @@
 services:
   api:
     build: .
-    image: anuc-backend:1.0
+    image: anuc-backend:1.1
     ports:
       - "8000:8000"
     environment:
+      APP_ENV: local
+      INTEGRACION_WHATSAPP: simulada
+      INTEGRACION_IA: simulada
+      # Clave de pruebas compartida entre la API y `python -m app.core.tokens_prueba` dentro del contenedor.
+      JWT_PRUEBA_KEY_PATH: /tmp/jwt_prueba.pem
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
       AWS_REGION: us-east-1
       AWS_ENDPOINT_URL: http://localstack:4566
       # LocalStack acepta cualquier credencial; solo existen para que boto3 no falle.
