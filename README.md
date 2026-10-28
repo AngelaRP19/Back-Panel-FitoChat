@@ -15,16 +15,18 @@ Estado: módulos 0b (operación y despliegue), 1b (ajustes del modelo y semillas
 | `GET /api/v1/auth/estado` | pública | `{hay_lider}`: el frontend decide si muestra el registro del primer líder. |
 | `POST /api/v1/auth/primer-lider` | pública (solo funciona sin líderes) | Crea el primer líder en Cognito y en la base. `201 {id}`; `409 YA_EXISTE_LIDER` si ya hay uno. |
 | `POST /api/v1/auth/recuperacion/verificar-correo` | pública, 5 por minuto por IP | `{existe}`; `429` con `Retry-After` al excederse. |
-| `PATCH /api/v1/me`, `POST /api/v1/me/contrasena` | Bearer | Editar nombre y celular (el correo no se cambia) y cambiar la contraseña (`204`). |
+| `PATCH /api/v1/me`, `POST /api/v1/me/contrasena` | Bearer | Editar nombre, celular (10 dígitos o E.164 `+57…`) y correo (se actualiza en Cognito y en la base, con compensación si falla uno de los dos) y cambiar la contraseña (`204`). |
 | `GET/POST /api/v1/tecnicos`, `GET/PATCH /api/v1/tecnicos/{id}`, `PATCH /api/v1/tecnicos/{id}/estado` | Bearer, solo líder técnico | Administración de cuentas de líderes y técnicos. `GET` admite `q`, `rol`, `activo`, `carga`, `page`, `page_size` y `con_carga=true` (lista para asignar casos). `409 UNICA_CUENTA_ACTIVA` si se intenta deshabilitar la última cuenta activa de un rol. |
-| `GET/POST /api/v1/productores`, `GET/PATCH /api/v1/productores/{id}`, `PATCH /api/v1/productores/{id}/estado` | Bearer, solo líder técnico | Productores. `GET` combina `q`, `estado`, `vereda`, `especie`, `con_casos`, `finca`, `desde`, `hasta`, `consulta` (30/90 días) y paginación. Celular único (`409 DUPLICADO`). Deshabilitar no borra casos. |
-| `GET/POST /api/v1/fincas`, `GET/PATCH /api/v1/fincas/{id}`, `GET/POST /api/v1/fincas/{id}/cultivos`, `PATCH /api/v1/cultivos/{id}` | Bearer, solo líder técnico | Fincas y cultivos (`INVERNADERO` o `CAMPO_ABIERTO`, mínimo una especie). Solo se registra finca para un productor activo. Coordenadas raras: `advertencias`, sin bloquear. Quitar una especie que usan casos: `409 ESPECIE_EN_USO` con `detalle`. |
+| `GET/POST /api/v1/productores`, `GET/PATCH /api/v1/productores/{id}`, `PATCH /api/v1/productores/{id}/estado` | Bearer, solo líder técnico | Productores. `GET` combina `q`, `estado`, `vereda`, `especie`, `con_casos`, `finca`, `desde`, `hasta`, `consulta` (30/90 días) y paginación. Celular único (`409 DUPLICADO`). Deshabilitar no borra casos. `page_size` admite hasta 1000 aquí (el selector de productores de los reportes los pide todos). |
+| `GET /api/v1/productores/resumen`, `GET /api/v1/productores/exportar`, `POST /api/v1/productores/estado`, `POST /api/v1/productores/mensaje` | Bearer, solo líder técnico | `{total, activos}`; CSV (`;`, BOM, fórmulas neutralizadas) con `ids` o los filtros de la lista; activar o desactivar en lote `{ids, activo}` → `{actualizados, solicitados}`; mensaje masivo `{ids, mensaje ≤ 500}` → `{enviados, omitidos}` solo a activos, con guardrail. Auditoría por productor. |
+| `GET/POST /api/v1/fincas`, `GET/PATCH /api/v1/fincas/{id}`, `GET/POST /api/v1/fincas/{id}/cultivos`, `PATCH /api/v1/cultivos/{id}` | Bearer, solo líder técnico | Fincas y cultivos (`INVERNADERO` o `CAMPO_ABIERTO`, mínimo una especie). Solo se registra finca para un productor activo. Coordenadas raras: `advertencias`, sin bloquear. Quitar una especie que usan casos: `409 ESPECIE_EN_USO` con `detalle`. `GET /api/v1/fincas/resumen` → `{fincas, cultivos, veredas}`. |
 | `GET /api/v1/especies`, `/categorias`, `/veredas` | Bearer (líder o técnico) | Catálogos. Las veredas son las de las fincas registradas, con su código normalizado. |
 | `GET /api/v1/consulta/productores-fincas`, `GET /api/v1/consulta/productores-fincas/{id}` | Bearer, solo técnico | Productores, fincas y cultivos de **sus** casos (asignación vigente), filtrados en SQL. Lo ajeno responde `404`. |
-| `GET /api/v1/casos`, `GET /api/v1/casos/conteos` | Bearer (líder o técnico) | Bandeja con filtros combinables (`estado`, `q`, `vereda`, `finca_id`, `cultivo_id`, `especie`, `categoria`, `tecnico_id`, `coincidencia_min`, `vencimiento`, `desde`, `hasta`) y paginación; los conteos usan el mismo alcance y filtros. El técnico solo recibe sus casos asignados (`WHERE` en SQL). |
+| `GET /api/v1/casos`, `GET /api/v1/casos/conteos` | Bearer (líder o técnico) | Bandeja con filtros combinables (`estado`, `q`, `vereda`, `finca_id`, `cultivo_id`, `especie`, `categoria`, `tecnico_id`, `coincidencia_min`, `vencimiento`, `desde`, `hasta`) y paginación; los conteos usan el mismo alcance y filtros. El técnico solo recibe sus casos asignados (`WHERE` en SQL). `GET /api/v1/casos/filtros` → `{veredas, fincas, cultivos}` que existen en los casos visibles. |
 | `GET /api/v1/casos/{id}` y `/evidencias`, `/cuestionario`, `/explicacion`, `/historial` | Bearer (líder o técnico) | Detalle consolidado con `puede_diagnosticar`, `puede_cerrar` y `puede_asignar` calculados para quien consulta; fotos con URL prefirmada de 10 minutos. Lo que no está asignado al técnico responde `404`. |
 | `PATCH /api/v1/casos/{id}/asignacion` | Bearer, solo líder técnico | Asigna (Pendiente de revisión → En revisión) o reasigna (conserva el estado). `409 TRANSICION_INVALIDA` si ya está Registrado, Cerrado, Descartado o aún no se envía; `409 CASO_YA_ASIGNADO` si es el mismo técnico. |
-| `GET /api/v1/resumen/navegacion` | Bearer (líder o técnico) | `{pendientes, alertas_generadas}` para el Sidebar; el técnico ve solo lo suyo. |
+| `GET /api/v1/resumen/navegacion` | Bearer (líder o técnico) | `{casos_pendientes, alertas_generadas, notificaciones_nuevas, lider}` para el Sidebar; el técnico ve solo lo suyo. |
+| `GET /api/v1/panel/resumen`, `GET /api/v1/panel/casos-por-categoria` · `GET /api/v1/panel/resumen-tecnico` | Bearer, líder · técnico | Inicio del líder (pantalla 16) y del técnico (17) con las rutas y formas del panel. |
 | `GET /api/v1/resumen/inicio` | Bearer (líder o técnico) | Indicadores del Inicio; la forma depende del rol (`rol`): el líder ve pendientes, en revisión, cerrados del mes, próximos a vencer, alertas y carga de los técnicos; el técnico, solo lo suyo. |
 | `GET /api/v1/resumen/casos-por-categoria?periodo=30d\|90d\|anio` | Bearer, solo líder técnico | Diagnósticos confirmados por categoría en el periodo. |
 | `POST /api/v1/casos/{id}/diagnostico` | Bearer, solo técnico | Completa el diagnóstico (En revisión → Registrado, `sp_registrar_diagnostico`). Solo el técnico de la asignación vigente: el líder recibe `403` y otro técnico `404`. `CONFIRMADO` solo si la identificación fue preliminar; `OTRA_PATOLOGIA` exige categoría; `REQUIERE_VISITA`, el motivo. Una categoría transmisible evalúa las alertas en la misma transacción. |
@@ -32,10 +34,14 @@ Estado: módulos 0b (operación y despliegue), 1b (ajustes del modelo y semillas
 | `GET /api/v1/alertas`, `GET /api/v1/alertas/{id}`, `GET /api/v1/alertas/parametros` | Bearer (líder o técnico) | Alertas con `conteos` por estado, casos que las originan (el técnico solo abre los suyos) y parámetros por categoría. |
 | `POST /api/v1/alertas/{id}/confirmar` y `/descartar`, `PUT .../borrador`, `GET .../destinatarios`, `PUT /api/v1/alertas/parametros/{categoria}` | Bearer, solo líder técnico | GENERADA o EN_REVISION → CONFIRMADA o DESCARTADA (con justificación). Destinatarios: productores activos dentro del radio de la alerta, por vereda. El mensaje (máx. 300) no puede recomendar productos, dosis ni tratamientos. |
 | `POST /api/v1/alertas/{id}/comunicar` y `/corregir` | Bearer, solo líder técnico | Envían por WhatsApp (simulado hasta la Fase C: estado `SIMULADO`) en lotes, con el resultado por destinatario. Reanudables y sin duplicados. Corregir: solo desde COMUNICADA, una vez, a quienes recibieron la alerta. |
-| `POST/DELETE /api/v1/alertas/{id}/seguir` | Bearer, solo técnico | «Avisarme cuando cambie» (P-06; el aviso aún no existe). |
+| `POST/DELETE /api/v1/alertas/{id}/seguir` | Bearer, solo técnico | «Avisarme cuando cambie» (P-06): quien sigue la alerta recibe sus cambios en la campana. Devuelve la alerta completa. |
+| `GET /api/v1/notificaciones`, `POST /api/v1/notificaciones/leidas` | Bearer (líder o técnico) | Campana (D-20): avisos de los últimos 7 días `{items, nuevas}` y «marcar como leídas» (`204`). Sin preferencias (D-16). |
+| `GET /api/v1/mapa/casos?especie&desde&hasta` | Bearer, solo líder técnico | Casos Confirmados u Otra patología con ubicación y `concentracion` 1–4 (regla de las alertas) y conteos por categoría. |
+| `GET /api/v1/documentos?q&tipo`, `GET /api/v1/documentos/{id}/archivo` · `POST /api/v1/documentos` | Bearer (líder o técnico) · solo líder | Documentación fitosanitaria (D-18): manual, generales y una tarjeta por categoría; el PDF; subir un PDF de hasta 20 MB (multipart `titulo`, `tipo`, `categoria`, `archivo`). |
+| `GET /api/v1/reportes/resumen`, `GET /api/v1/reportes/{casos,identificacion,alertas,productores,tecnicos}`, `GET/POST /api/v1/reportes/consultas`, `DELETE /api/v1/reportes/consultas/{id}` | Bearer, solo líder técnico | Reportes R1–R5, el resumen y las consultas guardadas (ver [Reportes](#reportes)). |
 | `GET /docs`, `/openapi.json` | — | Solo fuera de `prod`. |
 
-Errores con un solo formato, sin envoltorio: `{"codigo": "...", "mensaje": "...", "campos": {...}}`. Todas las respuestas llevan `X-Request-Id`, cabeceras de seguridad y `Cache-Control: no-store`. El cuerpo de una solicitud no puede superar `MAX_BODY_BYTES` (10 MB; `413` si lo supera).
+Errores con un solo formato, sin envoltorio: `{"codigo": "...", "mensaje": "...", "campos": {...}}`. Todas las respuestas llevan `X-Request-Id`, cabeceras de seguridad y `Cache-Control: no-store`. El cuerpo de una solicitud no puede superar `MAX_BODY_BYTES` (10 MB; `413` si lo supera), salvo `POST /api/v1/documentos` (`MAX_BODY_BYTES_DOCUMENTOS`, 21 MB).
 
 Códigos de `/api/v1/me`: `401 NO_AUTENTICADO` (sin token o inválido), `401 TOKEN_VENCIDO`, `403 CUENTA_INACTIVA`, `403 SIN_PERMISO` (el `sub` no tiene cuenta), `503 ERROR_INTERNO` (no se pudo consultar el JWKS de Cognito).
 
@@ -68,7 +74,7 @@ docs/OBJETOS_SQL.md              # vistas, funciones, procedimientos y triggers 
 docs/CAMBIOS_MODELO.md           # cambios aprobados al modelo, para actualizar los Anexos 2 y 3
 tests/                           # espejo de app/
 docker/postgres/                 # imagen con PostGIS + pgvector
-localstack/init-sqs.sh           # crea la cola FIFO en LocalStack
+localstack/init-sqs.sh           # crea la cola FIFO, el bucket y las tablas de DynamoDB en LocalStack
 scripts/                         # firmar.py y payloads de ejemplo
 .github/workflows/ci.yml
 ```
@@ -93,6 +99,9 @@ Nunca van en el repositorio: en local, `.env` (copia `.env.example`); en AWS, va
 | `COGNITO_REGION` | no | Por defecto, `AWS_REGION` |
 | `CORS_ORIGINS` | no (vacío) | Orígenes separados por comas; `*` no se acepta |
 | `MAX_BODY_BYTES` | no (10 MB) | Tamaño máximo del cuerpo |
+| `MAX_BODY_BYTES_DOCUMENTOS` | no (21 MB) | Solo `POST /api/v1/documentos` (PDF de 20 MB + el sobre multipart) |
+| `DYNAMODB_TABLA_CONVERSACIONES` | Fase C | Estado del chatbot (D-15). Sin ella, en memoria (no apto para prod) |
+| `DYNAMODB_TABLA_NOTIFICACIONES`, `DYNAMODB_TABLA_DOCUMENTOS`, `DYNAMODB_TABLA_CONSULTAS` | en `prod` | Campana (D-20), documentación (D-18) y consultas guardadas (D-19). Sin ellas, en memoria fuera de `prod`; en `prod` la función queda desactivada (lista vacía, `503` al guardar) |
 | `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET` | sí | Webhook |
 | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` | con `INTEGRACION_WHATSAPP=real` | Envío |
 | `LOG_LEVEL` | no (`INFO`) | Nivel de log |
@@ -191,18 +200,21 @@ Flujo: saludo y consentimiento → finca → cultivo → especie y zona afectada
 - `/salir` pide confirmación y, si confirma, borra el caso con todos sus datos y fotos. Cada mensaje reinicia el conteo de inactividad; responder tras la advertencia de 48 h retoma donde se quedó.
 - Todos los textos del bot están en `app/modules/orchestrator/textos.py`.
 
-## Reportes (alertas)
+## Reportes
 
-Solo el líder técnico. ACTA-003 limitó los reportes a **alertas**, así que `app/modules/panel_api/reportes/` ofrece únicamente ese (el resto del módulo de reportes sigue siendo la propuesta P-01).
+Solo el líder técnico (pantallas 23 y 24). Cada reporte es indicadores + secciones (barras, tablas y datos), la forma que ya dibuja el panel; la lógica de cada uno es una función pura (`alertas.py` para R3, `generales.py` para R1, R2, R4, R5 y el resumen) sobre una foto de los datos.
 
 | Endpoint | Qué devuelve |
 |---|---|
-| `GET /api/v1/reportes/alertas` | El reporte como indicadores + secciones (barras, tablas y datos), la forma que ya dibuja el panel |
-| `GET /api/v1/reportes/alertas/exportar?formato=csv\|pdf` | El mismo reporte como archivo (`Reporte_alertas_<mes>_<año>.csv` o `.pdf`) |
+| `GET /api/v1/reportes/resumen` | KPI del periodo, una tarjeta por reporte con sus destacados y las secciones de la pantalla 23 |
+| `GET /api/v1/reportes/casos` (R1), `/identificacion` (R2), `/productores` (R4), `/tecnicos` (R5) | El reporte con los filtros F1, F3 o F4. Su CSV y PDF los arma el navegador |
+| `GET /api/v1/reportes/alertas` (R3) | El reporte de alertas (filtros F2) |
+| `GET /api/v1/reportes/alertas/exportar?formato=csv\|pdf` | R3 como archivo (`Reporte_alertas_<mes>_<año>.csv` o `.pdf`) |
+| `GET/POST /api/v1/reportes/consultas`, `DELETE /api/v1/reportes/consultas/{id}` | Consultas guardadas (D-19, DynamoDB) con su `resultado` actual («6 casos»). `visibilidad` `yo` solo la ve su autor; solo el autor la borra (`403`). Sin envío programado (D-21): `envio` siempre es `null` |
 
-Filtros (iguales en ambos): `periodo` (`7d`, `30d`, `mes`, `anio`, `personalizado`; sin periodo es `anio`, o `personalizado` si hay `desde`/`hasta`), `desde`, `hasta`, `vereda` (código), `estado_alerta` (lista separada por comas), `decidida` (`sin` o el id del líder), `casos_min` y `comunicada` (`si` o `sin_comunicar`). Fechas invertidas o estados inexistentes dan `422 VALIDACION`.
+Filtros: todos los parámetros de consulta, como viven en la URL del panel (listas separadas por coma). Periodo: `periodo` (`7d`, `30d`, `mes`, `anio`, `personalizado`; sin periodo es `anio`, o `personalizado` si hay `desde`/`hasta`), `desde`, `hasta`. Máximo 12 meses; fechas invertidas, periodos o estados inexistentes dan `422 VALIDACION`. R3 además: `vereda`, `estado_alerta`, `decidida` (`sin` o el id del líder), `casos_min` y `comunicada` (`si` o `sin_comunicar`). El periodo se cuenta en hora de Bogotá con ambos extremos incluidos.
 
-El reporte trae: alertas generadas, sin decisión, confirmadas, días hasta decidir y productores avisados; alertas por estado, por vereda y por mes; el recorrido de la detección al aviso; el detalle de cada alerta y los parámetros vigentes. El periodo se cuenta por la fecha de generación en hora de Bogotá, con ambos extremos incluidos. La lógica del reporte (`alertas.py`) es una función pura y la exportación (`exportar.py`) usa los mismos datos: el CSV va separado por punto y coma, con BOM y con las fórmulas neutralizadas; el PDF es A4 horizontal (reportlab).
+Diferencias con la simulación del panel, a propósito: «Recepción → asignación» usa la fecha real de la primera asignación; «Uso del chatbot» (R4) solo muestra datos guardados (casos creados, enviados y descartados), y R5 no tiene extensiones de conservación (D-07). El CSV de R3 va separado por punto y coma, con BOM y con las fórmulas neutralizadas; el PDF es A4 horizontal (reportlab).
 
 ## Pipeline de imágenes e identificación
 
@@ -263,14 +275,30 @@ Cada mensaje se publica en `mensajes-entrantes.fifo` con `MessageGroupId` = celu
 
 ## Despliegue en AWS
 
-La imagen trae `app`, `alembic.ini` y `migrations`, y se versiona (`anuc-backend:1.1`; no se reutiliza `1.0`). Un mismo código, distintos comandos:
+La imagen trae `app`, `alembic.ini` y `migrations`, y se versiona (`anuc-backend:1.2`, `1.3`…; nunca se reutiliza una etiqueta). Un mismo código, tres modos de ejecución más las tareas puntuales:
 
 | Necesidad | Comando | Cómo |
 |---|---|---|
-| API | `uvicorn app.main:app` (el `CMD`) | Servicio ECS detrás del ALB |
-| Migrar | `alembic upgrade head` | Tarea ECS puntual con las variables `DB_*` |
+| API | `uvicorn app.main:app` (el `CMD`) | Servicio ECS `anuc-backend-svc` detrás del ALB |
+| Consumidor de la cola | `python -m app.workers.sqs_consumer` | Servicio ECS `anuc-consumer-svc` (1 tarea, sin ALB), misma definición con otro comando |
+| Jobs | `python -m app.jobs.run <nombre>` | EventBridge Scheduler → ECS RunTask (zona `America/Bogota`): `advertencia_inactividad` y `descarte_inactividad` cada 15 min, `retencion` diario 03:00, `evaluar_alertas` diario 03:30 |
+| Migrar | `alembic upgrade head` | Tarea ECS puntual |
 | Sembrar | `python -m app.infrastructure.db.seed` | Tarea ECS puntual |
 
-Variables en la Task Definition: `APP_ENV=prod`, `AWS_REGION`, `SQS_QUEUE_URL`, `S3_BUCKET_EVIDENCIAS`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_SSLMODE=require`, `COGNITO_*`, `CORS_ORIGINS`, `INTEGRACION_WHATSAPP=simulada`, `INTEGRACION_IA=simulada`. Desde Secrets Manager (`ValueFrom`): `DB_USER` y `DB_PASSWORD` (claves `username` y `password` del secreto de RDS) y las de WhatsApp. No definas `AWS_ENDPOINT_URL`.
+Variables en la Task Definition (las mismas para los tres modos):
 
-Permisos del rol de la tarea que usa hoy el código: `sqs:SendMessage` sobre la cola. Los demás (S3, Cognito) se piden en los módulos que los usan. El health check del ALB va a `/salud`, puerto 8000.
+- Valores: `APP_ENV=prod`, `AWS_REGION=us-east-1`, `SQS_QUEUE_URL`, `S3_BUCKET_EVIDENCIAS=anuc-evidencias-fitochat`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_SSLMODE=require`, `COGNITO_USER_POOL_ID`, `COGNITO_APP_CLIENT_ID`, `COGNITO_REGION`, `CORS_ORIGINS` (vacío: el panel llama en el mismo origen), `INTEGRACION_WHATSAPP` e `INTEGRACION_IA` (`simulada` hasta la Fase C), `DYNAMODB_TABLA_NOTIFICACIONES=anuc-notificaciones`, `DYNAMODB_TABLA_DOCUMENTOS=anuc-documentos`, `DYNAMODB_TABLA_CONSULTAS=anuc-consultas-reportes` y, en la Fase C, `DYNAMODB_TABLA_CONVERSACIONES=anuc-conversaciones`, `IA_REGION`, `BEDROCK_MODEL_VISION`, `BEDROCK_MODEL_TEXT`, `BEDROCK_MODEL_EMBED`.
+- Desde Secrets Manager (`ValueFrom`): `DB_USER` y `DB_PASSWORD` (claves `username` y `password` del secreto de RDS), `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET` (y en la Fase C `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`) de `anuc/whatsapp`, e `IA_ROLE_ARN`, `IA_EXTERNAL_ID` de `anuc/ia-cuenta`.
+- No definas `AWS_ENDPOINT_URL` (solo LocalStack).
+
+Tablas de DynamoDB (bajo demanda, PITR): `anuc-conversaciones` (PK `telefono`; TTL `expira_en`), `anuc-documentos` (PK `id_documento`), `anuc-consultas-reportes` (PK `id_consulta`) y `anuc-notificaciones` (PK `destinatario`, SK `fecha_id`; TTL `expira_en`).
+
+Permisos del rol de la tarea (`anuc-permisos-app`):
+
+- `sqs:SendMessage`, `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:ChangeMessageVisibility` sobre la cola.
+- S3 sobre el bucket de evidencias: `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`, `s3:DeleteObjectVersion` (objetos, incluido `documentos/*`) y `s3:ListBucketVersions` (bucket).
+- Cognito sobre el user pool: `cognito-idp:AdminCreateUser`, `AdminDeleteUser`, `AdminDisableUser`, `AdminEnableUser`, `AdminGetUser`, `AdminUpdateUserAttributes`, `AdminSetUserPassword`.
+- DynamoDB sobre las cuatro tablas `anuc-*`: `GetItem`, `PutItem`, `UpdateItem`, `DeleteItem`, `Query`, `Scan`.
+- Fase C: `sts:AssumeRole` sobre el rol `anuc-ia-invoker` de la cuenta de IA.
+
+Enrutamiento: una sola URL pública en CloudFront. `/api/*`, `/webhook/*` y `/salud` van al ALB (sin caché, todos los métodos, con la cabecera `X-Origin-Verify`, que el ALB exige); lo demás va al bucket del panel con la función `anuc-spa-rewrite`. El health check del ALB va a `/salud`, puerto 8000.

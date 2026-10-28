@@ -18,6 +18,10 @@ services:
       AWS_SECRET_ACCESS_KEY: test
       SQS_QUEUE_URL: http://localstack:4566/000000000000/mensajes-entrantes.fifo
       S3_BUCKET_EVIDENCIAS: anuc-evidencias
+      DYNAMODB_TABLA_CONVERSACIONES: conversaciones
+      DYNAMODB_TABLA_NOTIFICACIONES: notificaciones
+      DYNAMODB_TABLA_DOCUMENTOS: documentos
+      DYNAMODB_TABLA_CONSULTAS: consultas-reportes
       WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-token-local}
       WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-secreto-local}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -48,6 +52,7 @@ services:
       SQS_QUEUE_URL: http://localstack:4566/000000000000/mensajes-entrantes.fifo
       S3_BUCKET_EVIDENCIAS: anuc-evidencias
       DYNAMODB_TABLA_CONVERSACIONES: conversaciones
+      DYNAMODB_TABLA_NOTIFICACIONES: notificaciones
       WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-token-local}
       WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-secreto-local}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -69,8 +74,8 @@ services:
     volumes:
       - ./localstack/init-sqs.sh:/etc/localstack/init/ready.d/init-sqs.sh:ro
     healthcheck:
-      # Sano solo cuando la cola ya existe.
-      test: ["CMD", "awslocal", "sqs", "get-queue-url", "--queue-name", "mensajes-entrantes.fifo"]
+      # Sano solo cuando el script de arranque terminó (la tabla de notificaciones es lo último que crea).
+      test: ["CMD", "awslocal", "dynamodb", "describe-table", "--table-name", "notificaciones"]
       interval: 5s
       timeout: 5s
       retries: 20
