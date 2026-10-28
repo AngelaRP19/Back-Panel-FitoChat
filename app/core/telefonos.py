@@ -3,6 +3,7 @@
 import re
 
 PATRON_CELULAR = re.compile(r"^3\d{9}$")
+PREFIJO_DEMO = "573000000"  # celulares 3000000xxx de los datos de demostración (seed_demo): nunca reciben mensajes
 _INDICATIVO = "57"
 
 

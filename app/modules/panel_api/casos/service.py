@@ -31,8 +31,15 @@ from app.core.state_machine import es_asignable, validar_transicion
 from app.core.telefonos import celular_de_e164
 from app.infrastructure.db import procedimientos as sp
 from app.infrastructure.s3_storage_client import VIGENCIA_URL_SEGUNDOS, S3StorageClient
+from app.infrastructure.whatsapp_client import WhatsAppClient
 from app.modules.panel_api.auditoria import auditar
 from app.modules.panel_api.casos import repository as repo
+from app.modules.panel_api.casos.avisos_productor import (
+    AvisosProductor,
+    texto_asignado,
+    texto_cerrado,
+    texto_informe,
+)
 from app.modules.panel_api.casos.repository import Alcance, CasoFila, FiltrosCasos
 from app.modules.panel_api.casos.schemas import (
     Alternativa,
@@ -174,11 +181,16 @@ TEXTO_RESULTADO = {
 
 class CasosService:
     def __init__(
-        self, session: AsyncSession, s3: S3StorageClient | None = None, notificador: Notificador | None = None
+        self,
+        session: AsyncSession,
+        s3: S3StorageClient | None = None,
+        notificador: Notificador | None = None,
+        whatsapp: WhatsAppClient | None = None,
     ) -> None:
         self.session = session
         self.s3 = s3
         self.notificador = notificador or Notificador()
+        self.productor = AvisosProductor(session, whatsapp)  # avisos al chat del productor
 
     async def _fila_o_404(self, actor: UsuarioActual, id_caso: str) -> CasoFila:
         fila = await repo.obtener(self.session, alcance_de(actor), id_caso)
@@ -436,6 +448,10 @@ class CasosService:
             [id_tecnico], avisos.CASO_ASIGNADO, "Caso asignado", f"{codigo_caso(id_caso)} · {fila.nombre_productor}",
             f"/casos/{id_caso}",
         )  # fmt: skip
+        reasignado = vigente is not None
+        await self.productor.enviar(
+            actor, fila, "REASIGNADO" if reasignado else "ASIGNADO", texto_asignado(fila, nombre_tecnico, reasignado)
+        )
         return a_resumen(fila)
 
     # --- Diagnóstico y cierre ----------------------------------------------------------------------------------------
@@ -480,6 +496,16 @@ class CasosService:
             await self.session.rollback()
             raise _traducir(error) from None
         await self._avisar_diagnostico(actor, id_caso, fila, datos.resultado_tecnico.value, alertas_nuevas)
+        informe = texto_informe(
+            fila,
+            fila.nombre_tecnico or actor.nombre,
+            datos.resultado_tecnico.value,
+            categoria,
+            datos.descripcion,
+            datos.observaciones,
+            motivo,
+        )
+        await self.productor.enviar(actor, fila, "INFORME_DIAGNOSTICO", informe)
         return await self.detalle(actor, id_caso)
 
     async def _avisar_diagnostico(
@@ -558,6 +584,7 @@ class CasosService:
         except DBAPIError as error:
             await self.session.rollback()
             raise _traducir(error) from None
+        await self.productor.enviar(actor, fila, "CIERRE", texto_cerrado(fila))
         return await self.detalle(actor, id_caso)
 
 

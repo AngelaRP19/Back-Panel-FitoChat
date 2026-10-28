@@ -19,6 +19,7 @@ from app.core.roles import Rol
 from app.core.security_cognito import UsuarioActual, requiere_rol
 from app.infrastructure.db.session import get_session
 from app.infrastructure.s3_storage_client import S3StorageClient, get_s3_storage_client
+from app.infrastructure.whatsapp_client import WhatsAppClient, get_whatsapp_client
 from app.modules.panel_api.casos import repository as repo
 from app.modules.panel_api.casos.repository import NO_IDENTIFICADA, FiltrosCasos
 from app.modules.panel_api.casos.schemas import (
@@ -60,11 +61,21 @@ def get_s3_opcional() -> S3StorageClient | None:
         return None
 
 
+def get_whatsapp_opcional() -> WhatsAppClient | None:
+    """Sin cliente de WhatsApp (mal configurado) el panel sigue funcionando: solo no avisa al productor."""
+    try:
+        return get_whatsapp_client()
+    except RuntimeError:
+        logger.warning("WhatsApp no está configurado: no se avisará al productor de los cambios de su caso")
+        return None
+
+
 def get_servicio(
     session: Annotated[AsyncSession, Depends(get_session)],
     s3: Annotated[S3StorageClient | None, Depends(get_s3_opcional)],
+    whatsapp: Annotated[WhatsAppClient | None, Depends(get_whatsapp_opcional)],
 ) -> CasosService:
-    return CasosService(session, s3)
+    return CasosService(session, s3, whatsapp=whatsapp)
 
 
 Servicio = Annotated[CasosService, Depends(get_servicio)]

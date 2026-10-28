@@ -118,3 +118,13 @@ def test_el_cliente_real_envia_el_interactivo_a_la_graph_api() -> None:
     cuerpo = json.loads(vistas[0].content)
     assert cuerpo["messaging_product"] == "whatsapp" and cuerpo["to"] == "573001112233"
     assert cuerpo["type"] == "interactive" and cuerpo["interactive"]["type"] == "location_request_message"
+
+
+def test_a_los_numeros_de_demostracion_nunca_sale_un_mensaje_real() -> None:
+    vistas: list[httpx.Request] = []
+    cliente = WhatsAppCloud(
+        "token", "555", "v26.0", httpx.MockTransport(lambda p: vistas.append(p) or httpx.Response(200))
+    )
+    resultado = cliente.enviar_texto("573000000001", "Hola")
+    assert resultado.estado == SIMULADO and "demostración" in (resultado.error or "") and vistas == []
+    assert cliente.enviar_interactivo("573000000002", PedirUbicacion("x")).estado == SIMULADO and vistas == []

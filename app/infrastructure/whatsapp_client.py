@@ -18,6 +18,7 @@ from typing import Any, Protocol
 import httpx
 
 from app.core.config import get_settings
+from app.core.telefonos import PREFIJO_DEMO
 from app.infrastructure.whatsapp_mensajes import Interactivo, texto_visible
 
 ENVIADO = "ENVIADO"
@@ -118,6 +119,8 @@ class WhatsAppCloud:
         return self._enviar(telefono_e164, mensaje.cuerpo())
 
     def _enviar(self, telefono_e164: str, contenido: dict[str, Any]) -> ResultadoEnvio:
+        if telefono_e164.startswith(PREFIJO_DEMO):  # datos de demostración: esos números pueden ser de cualquiera
+            return ResultadoEnvio(SIMULADO, error="Número de demostración: no se envía")
         cuerpo: dict[str, Any] = {"messaging_product": "whatsapp", "to": telefono_e164, **contenido}
         try:
             respuesta = self._http.post(f"{self._base}/{self._phone_number_id}/messages", json=cuerpo)
