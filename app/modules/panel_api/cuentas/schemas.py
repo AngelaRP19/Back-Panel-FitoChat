@@ -1,7 +1,7 @@
 import re
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 from app.core.roles import Rol
 from app.core.telefonos import PATRON_CELULAR, normalizar_celular
@@ -88,17 +88,15 @@ class UsuarioMe(BaseModel):
 
 
 class ActualizarMe(BaseModel):
-    """`PATCH /me`: solo nombre y celular. El correo es el usuario de Cognito y no se edita."""
+    """`PATCH /me` (B-04): nombre, correo y celular. El panel envía los tres; solo se aplica lo que cambió.
+
+    Cambiar el correo lo cambia también en Cognito (la sesión sigue: la cuenta se reconoce por `sub`, no por correo).
+    El rol no se edita aquí.
+    """
 
     nombre: Nombre | None = None
+    correo: Correo | None = None
     celular: Celular | None = None
-    correo: str | None = Field(default=None, exclude=True)
-
-    @field_validator("correo")
-    @classmethod
-    def _correo_no_se_edita(cls, valor: str | None) -> None:
-        if valor is not None:
-            raise ValueError("El correo no se puede cambiar.")
 
 
 class CambiarContrasenaIn(BaseModel):

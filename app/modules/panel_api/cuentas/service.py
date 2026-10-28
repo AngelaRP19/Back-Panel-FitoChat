@@ -199,7 +199,9 @@ class CuentasService:
 
     async def actualizar_mi_cuenta(self, usuario: UsuarioActual, datos: ActualizarMe) -> CuentaFila:
         cuenta = await self._obtener_o_404(usuario.id)
-        return await self._aplicar_cambios(cuenta, datos.nombre, None, datos.celular, usuario, "EDITAR_MI_CUENTA")
+        return await self._aplicar_cambios(
+            cuenta, datos.nombre, datos.correo, datos.celular, usuario, "EDITAR_MI_CUENTA"
+        )
 
     async def cambiar_contrasena(self, usuario: UsuarioActual, access_token: str, datos: CambiarContrasenaIn) -> None:
         await self._cognito(
