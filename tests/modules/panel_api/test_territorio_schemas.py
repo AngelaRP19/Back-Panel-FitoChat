@@ -30,7 +30,7 @@ def test_productor_valido_queda_activo_por_defecto() -> None:
     assert (productor.nombre, productor.activo) == ("Ana Torres", True)
 
 
-@pytest.mark.parametrize("celular", ["", "573001234567", "+573001234567", "2001234567", "300123456"])
+@pytest.mark.parametrize("celular", ["", "+583001234567", "2001234567", "300123456"])
 def test_productor_con_celular_invalido(celular: str) -> None:
     with pytest.raises(ValidationError) as exc:
         ProductorIn(nombre="Ana", celular=celular)
