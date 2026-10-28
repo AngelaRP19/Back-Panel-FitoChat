@@ -86,6 +86,10 @@ class Settings(BaseSettings):
     # Estado de las conversaciones del chatbot (D-15): tabla de DynamoDB. Sin tabla, en memoria (solo local y pruebas).
     dynamodb_tabla_conversaciones: str | None = None
     conversacion_vigencia_dias: int = 7
+    # Datos no relacionales del panel (D-18, D-19, D-20). Sin tabla: en memoria en local; en prod, ver cada store.
+    dynamodb_tabla_notificaciones: str | None = None
+    dynamodb_tabla_documentos: str | None = None
+    dynamodb_tabla_consultas: str | None = None
 
     whatsapp_verify_token: SecretStr
     whatsapp_app_secret: SecretStr

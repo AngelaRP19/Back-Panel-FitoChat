@@ -576,6 +576,26 @@ async def registrar_diagnostico(
         )
 
 
+async def alertas_generadas(session: AsyncSession) -> list[tuple[str, str, str]]:
+    """(id, categoría, vereda principal) de las alertas GENERADA: para saber cuáles nacieron con un diagnóstico."""
+    resultado = await session.execute(
+        text(
+            """
+            SELECT a.id_alerta, cf.nombre_categoria,
+                   (SELECT f.vereda_sector_finca FROM alerta_casos ac
+                    JOIN casos c ON c.id_caso = ac.id_caso
+                    JOIN cultivos cu ON cu.id_cultivo = c.id_cultivo
+                    JOIN fincas f ON f.id_finca = cu.id_finca
+                    WHERE ac.id_alerta = a.id_alerta
+                    GROUP BY f.vereda_sector_finca ORDER BY count(*) DESC, f.vereda_sector_finca LIMIT 1) AS vereda
+            FROM alertas a JOIN categorias_fitosanitarias cf ON cf.id_categoria = a.id_categoria
+            WHERE a.estado_alerta = 'GENERADA'
+            """
+        )
+    )
+    return [(str(i), str(c), str(v or "")) for i, c, v in resultado]
+
+
 async def evaluar_alerta(session: AsyncSession, id_categoria: str) -> None:
     await session.execute(sp.EVALUAR_ALERTA, {"id_categoria": id_categoria, "fecha": None})
 
@@ -586,3 +606,16 @@ async def cerrar_caso(session: AsyncSession, id_caso: str, actor_tipo: str, acto
         sp.CERRAR_CASO,
         {"id_caso": id_caso, "actor_tipo": actor_tipo, "actor_id": actor_id, "meses": meses, "fecha": None},
     )
+
+
+async def opciones_filtro(session: AsyncSession, alcance: Alcance) -> list[tuple[str, str, str, str, str]]:
+    """(vereda, id_finca, finca, id_cultivo, cultivo) de los casos que ve el usuario (B-05: filtros de la bandeja)."""
+    condicion, parametros = ("TRUE", {}) if alcance.es_lider else ("v.id_tecnico = :u", {"u": alcance.id_usuario})
+    resultado = await session.execute(
+        text(
+            "SELECT DISTINCT v.vereda_sector_finca, v.id_finca, v.nombre_finca, v.id_cultivo, v.nombre_cultivo "
+            f"FROM vw_casos_detalle v WHERE {condicion}"
+        ),
+        parametros,
+    )
+    return [(str(a), str(b), str(c), str(d), str(e)) for a, b, c, d, e in resultado]

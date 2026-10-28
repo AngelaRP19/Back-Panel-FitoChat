@@ -25,6 +25,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.catalogos_api import CATEGORIAS, ESPECIES, EspecieCultivo, TipoCultivo
+from app.core.codigos import codigo_caso
 from app.core.config import Settings, get_settings
 from app.core.evidencias import MAXIMO_FOTOS_POR_TIPO, MAXIMO_FOTOS_UTILES
 from app.core.guardrail import recomienda_tratamiento
@@ -39,6 +40,12 @@ from app.modules.identification.reglas import ordenar
 from app.modules.orchestrator import repositorio as repo
 from app.modules.orchestrator import textos as t
 from app.modules.orchestrator.puertos import Identificador, PipelineImagenes
+from app.modules.panel_api.notificaciones.service import (
+    CASO_SIN_TECNICO,
+    LIDERES_ACTIVOS_SQL,
+    Aviso,
+    publicar_sync,
+)
 from app.modules.scheduler.borrado import borrar_caso
 
 logger = logging.getLogger(__name__)
@@ -211,6 +218,8 @@ class Orquestador:
             self.store.borrar(m.telefono)
         elif efectos.conversacion is not None:
             self.store.guardar(efectos.conversacion)
+        for aviso in efectos.avisos:
+            publicar_sync(aviso)
         for texto in efectos.respuestas:
             resultado = self.whatsapp.enviar_texto(m.telefono, texto)
             if not resultado.exito:
@@ -572,6 +581,13 @@ class Orquestador:
                 identificacion.detalle,
             )
         repo.enviar_al_panel(d.s, d.conv.caso_id, d.productor.id)
+        lideres = tuple(str(i) for (i,) in d.s.execute(LIDERES_ACTIVOS_SQL))
+        d.ef.avisos.append(
+            Aviso(
+                lideres, CASO_SIN_TECNICO, "Caso nuevo sin técnico",
+                f"{codigo_caso(d.conv.caso_id)} · {d.productor.nombre}", f"/casos/{d.conv.caso_id}",
+            )
+        )  # fmt: skip
         d.decir(t.ENVIADO)
         if identificacion is not None and identificacion.porcentajes:
             primeras = [CATEGORIAS.a_nombre(c) for c, _ in ordenar(identificacion.porcentajes)[:2]]

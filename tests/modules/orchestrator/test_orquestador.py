@@ -1,12 +1,16 @@
 """Orquestador conversacional: recorridos completos y alternativos, entradas inválidas, /salir y reanudación."""
 
 import json
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
 from sqlalchemy import text as sql
+from sqlalchemy.orm import Session
 
 from app.infrastructure.ai_client import Turno
+from app.infrastructure.db.models import LiderTecnico
+from app.infrastructure.notificaciones_store import _EN_MEMORIA as NOTIFICACIONES
 from app.modules.orchestrator import textos as t
 from app.modules.orchestrator.puertos import Identificacion
 from tests.modules.orchestrator.conftest import (
@@ -349,6 +353,37 @@ def test_recorrido_completo_hasta_pendiente_de_revision(sistema: Sistema) -> Non
     assert sistema.store.obtener(TELEFONO) is None  # la conversación terminó
     tipos = {e["tipo_evento"] for e in sistema.consulta("SELECT tipo_evento FROM eventos")}
     assert {"CASO_CREADO", "ANALISIS_CHATBOT", "ENVIADO_A_REVISION"} <= tipos
+
+
+def test_el_caso_nuevo_avisa_a_los_lideres_activos_en_la_campana(sistema: Sistema) -> None:
+    """B-10: llega al panel sin técnico → aviso CASO_SIN_TECNICO a cada líder activo, no a los deshabilitados."""
+    NOTIFICACIONES.vaciar()
+    with Session(sistema.motor) as sesion:
+        lideres = [
+            LiderTecnico(
+                nombre_lider_tecnico=nombre,
+                correo_lider_tecnico=f"{nombre.lower()}@anuc.test",
+                celular_lider_tecnico=f"57300000000{i}",
+                contrasena_lider_tecnico="hash-inutilizable",
+                estado_cuenta_lider_tecnico=estado,
+            )
+            for i, (nombre, estado) in enumerate([("Laura", "ACTIVO"), ("Dora", "DESHABILITADO")])
+        ]
+        sesion.add_all(lideres)
+        sesion.commit()
+        activo, deshabilitado = (x.id_lider_tecnico for x in lideres)
+    programar(sistema, Turno(completo=True))
+    productor_con_finca(sistema.motor)
+    for texto in ("hola", "2", "esquina de abajo", "hace una semana", "sí"):
+        sistema.escribir(texto)
+    sistema.foto("m1", "fruto")
+    sistema.escribir("listo")
+    sistema.escribir("sí")
+    [caso] = sistema.consulta("SELECT id_caso FROM casos")
+    desde = datetime.now(UTC) - timedelta(minutes=5)
+    [aviso] = NOTIFICACIONES.listar(activo, desde)
+    assert aviso.tipo == "CASO_SIN_TECNICO" and aviso.enlace == f"/casos/{caso['id_caso']}"
+    assert NOTIFICACIONES.listar(deshabilitado, desde) == []
 
 
 def test_un_caso_no_llega_al_panel_sin_foto_valida(sistema: Sistema) -> None:

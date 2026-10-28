@@ -132,7 +132,7 @@ def test_los_pendientes_mas_antiguos_primero(api: TestClient, mundo: Mundo, dato
     d = pedir(api, mundo.lider, INICIO)
     assert [p["id"] for p in d["pendientes_antiguos"]] == [datos["R1"], datos["P1"], datos["R2"], datos["P2"]]
     primero = d["pendientes_antiguos"][0]
-    assert set(primero) == {"id", "codigo", "productor_nombre", "enviado_a_panel_en", "tecnico_asignado_id"}
+    assert set(primero) == {"id", "codigo", "numero", "productor_nombre", "enviado_a_panel_en", "tecnico_asignado_id"}
     assert primero["tecnico_asignado_id"] == mundo.t1.id and primero["productor_nombre"] == "Ana Pérez"
     assert d["pendientes_antiguos"][1]["tecnico_asignado_id"] is None
     assert d["pendientes_sin_tecnico"] == 2
@@ -259,7 +259,7 @@ def contadores(api: TestClient, mundo: Mundo) -> dict[str, int]:
     """Lo que dicen el Sidebar, la bandeja, la lista de alertas y el inicio del líder."""
     inicio = pedir(api, mundo.lider, INICIO)
     return {
-        "nav_pendientes": pedir(api, mundo.lider, NAV)["pendientes"],
+        "nav_pendientes": pedir(api, mundo.lider, NAV)["casos_pendientes"],
         "bandeja_pendientes": pedir(api, mundo.lider, "/api/v1/casos/conteos")["PENDIENTE_REVISION"],
         "inicio_pendientes": inicio["kpis"]["pendientes_revision"],
         "inicio_sin_tecnico": inicio["pendientes_sin_tecnico"],
@@ -298,7 +298,7 @@ def test_los_contadores_del_tecnico_coinciden_con_su_bandeja(
         nav = pedir(api, tecnico, NAV)
         conteos = pedir(api, tecnico, "/api/v1/casos/conteos")
         inicio = pedir(api, tecnico, INICIO)["kpis"]
-        assert nav["pendientes"] == conteos["EN_REVISION"] == inicio["en_revision"]
+        assert nav["casos_pendientes"] == conteos["EN_REVISION"] == inicio["en_revision"]
         assert nav["alertas_generadas"] == 0
 
 

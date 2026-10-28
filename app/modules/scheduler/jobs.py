@@ -26,6 +26,13 @@ from app.core.state_machine import validar_transicion
 from app.infrastructure.db import procedimientos as sp
 from app.infrastructure.s3_storage_client import S3StorageClient
 from app.infrastructure.whatsapp_client import WhatsAppClient
+from app.modules.panel_api.notificaciones.service import (
+    ALERTA_GENERADA,
+    LIDERES_ACTIVOS_SQL,
+    PROXIMOS_A_VENCER,
+    Aviso,
+    publicar_sync,
+)
 from app.modules.scheduler.borrado import borrar_caso
 
 logger = logging.getLogger(__name__)
@@ -207,8 +214,55 @@ def descarte_inactividad(engine: Engine, ctx: Contexto) -> ResultadoJob:
     )
 
 
+DIAS_AVISO_VENCIMIENTO = 15  # igual que el Inicio del panel
+
+
+def avisar_proximos_a_vencer(engine: Engine, ctx: Contexto) -> int:
+    """B-10: un aviso diario a los líderes si hay casos Cerrados que vencen en los próximos 15 días."""
+    with Session(engine) as sesion:
+        cuantos = int(
+            sesion.scalar(
+                text(
+                    "SELECT count(*) FROM casos c JOIN estados e ON e.id_estado = c.id_estado "
+                    "WHERE e.nombre_estado = :cerrado AND c.vence_en IS NOT NULL "
+                    "AND c.vence_en BETWEEN (CAST(:ahora AS timestamptz) AT TIME ZONE 'America/Bogota')::date "
+                    "AND (CAST(:ahora AS timestamptz) AT TIME ZONE 'America/Bogota')::date + :dias"
+                ),
+                {
+                    "cerrado": ESTADOS_CASO.a_nombre(EstadoCaso.CERRADO),
+                    "ahora": ctx.ahora,
+                    "dias": DIAS_AVISO_VENCIMIENTO,
+                },
+            )
+            or 0
+        )
+        lideres = tuple(str(i) for (i,) in sesion.execute(LIDERES_ACTIVOS_SQL))
+    if cuantos:
+        texto = "1 caso" if cuantos == 1 else f"{cuantos} casos"
+        publicar_sync(
+            Aviso(
+                lideres, PROXIMOS_A_VENCER, "Casos próximos a vencer",
+                f"{texto} con fecha de vencimiento de conservación en menos de {DIAS_AVISO_VENCIMIENTO} días",
+                f"/casos?estado=CERRADO&vencimiento={DIAS_AVISO_VENCIMIENTO}",
+            )
+        )  # fmt: skip
+    return cuantos
+
+
 def retencion(engine: Engine, ctx: Contexto) -> ResultadoJob:
-    """Casos Cerrados cuya conservación venció (`vence_en` ya llegó, en hora de Colombia): borrado físico total."""
+    """Casos Cerrados cuya conservación venció (`vence_en` ya llegó, en hora de Colombia): borrado físico total.
+
+    Después avisa a los líderes de los que vencen pronto (B-10); si el aviso falla, el job no falla.
+    """
+    resultado = _retencion(engine, ctx)
+    try:
+        resultado.detalle["proximos_a_vencer"] = avisar_proximos_a_vencer(engine, ctx)
+    except Exception:
+        logger.exception("No se pudo avisar de los casos próximos a vencer")
+    return resultado
+
+
+def _retencion(engine: Engine, ctx: Contexto) -> ResultadoJob:
     condicion = (
         "e.nombre_estado = :cerrado AND c.vence_en IS NOT NULL "
         "AND c.vence_en <= (CAST(:ahora AS timestamptz) AT TIME ZONE 'America/Bogota')::date"
@@ -232,11 +286,25 @@ def evaluar_alertas(engine: Engine, ctx: Contexto) -> ResultadoJob:
     resultado = ResultadoJob("evaluar_alertas")
     try:
         with Session(engine) as sesion, sesion.begin():
-            antes = sesion.scalar(text("SELECT count(*) FROM alertas"))
+            antes = {str(i) for (i,) in sesion.execute(text("SELECT id_alerta FROM alertas"))}
             sesion.execute(sp.EVALUAR_ALERTA, {"id_categoria": None, "fecha": ctx.ahora})
-            despues = sesion.scalar(text("SELECT count(*) FROM alertas"))
+            todas = sesion.execute(
+                text(
+                    "SELECT a.id_alerta, cf.nombre_categoria FROM alertas a "
+                    "JOIN categorias_fitosanitarias cf ON cf.id_categoria = a.id_categoria"
+                )
+            ).all()
+            nuevas = [(str(i), str(c)) for i, c in todas if str(i) not in antes]
+            lideres = tuple(str(i) for (i,) in sesion.execute(LIDERES_ACTIVOS_SQL))
         resultado.procesados = resultado.exitosos = 1
-        resultado.detalle = {"alertas_nuevas": int(despues or 0) - int(antes or 0)}
+        resultado.detalle = {"alertas_nuevas": len(nuevas)}
+        for id_alerta, categoria in nuevas:  # B-10: después del commit
+            publicar_sync(
+                Aviso(
+                    lideres, ALERTA_GENERADA, "Alerta generada", f"Posible concentración de {categoria}",
+                    f"/alertas/{id_alerta}",
+                )
+            )  # fmt: skip
     except Exception:
         resultado.procesados = resultado.errores = 1
         logger.exception("Falló el barrido de alertas")

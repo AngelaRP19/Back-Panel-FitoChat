@@ -9,15 +9,17 @@ from datetime import date
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.errors import ErrorRespuesta
 from app.api.paginacion import Pagina, ParametrosPagina, parametros_pagina
-from app.core.catalogos_api import CategoriaFito, EspecieCultivo, EstadoCaso
+from app.core.catalogos_api import CategoriaFito, EspecieCultivo, EstadoCaso, normalizar_codigo
 from app.core.roles import Rol
 from app.core.security_cognito import UsuarioActual, requiere_rol
 from app.infrastructure.db.session import get_session
 from app.infrastructure.s3_storage_client import S3StorageClient, get_s3_storage_client
+from app.modules.panel_api.casos import repository as repo
 from app.modules.panel_api.casos.repository import NO_IDENTIFICADA, FiltrosCasos
 from app.modules.panel_api.casos.schemas import (
     AsignarIn,
@@ -30,7 +32,7 @@ from app.modules.panel_api.casos.schemas import (
     EvidenciaOut,
     ExplicacionOut,
 )
-from app.modules.panel_api.casos.service import CasosService
+from app.modules.panel_api.casos.service import CasosService, alcance_de
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +122,43 @@ async def listar_casos(
 async def conteos_casos(actor: Usuario, servicio: Servicio, filtros: Filtros) -> ConteosCasos:
     """Casos por estado para las pestañas, con el mismo alcance y filtros del listado (sin el de estado)."""
     return await servicio.conteos(actor, filtros)
+
+
+class OpcionVereda(BaseModel):
+    id: str = Field(examples=["SAN_LUIS"])
+    nombre: str
+
+
+class OpcionFinca(BaseModel):
+    id: str
+    nombre: str
+    vereda: str = Field(description="Código de la vereda")
+
+
+class OpcionCultivo(BaseModel):
+    id: str
+    nombre: str
+    finca_id: str
+
+
+class OpcionesFiltroCasos(BaseModel):
+    veredas: list[OpcionVereda]
+    fincas: list[OpcionFinca]
+    cultivos: list[OpcionCultivo]
+
+
+@router.get("/filtros", response_model=OpcionesFiltroCasos, responses=RESPUESTAS)
+async def opciones_filtro(actor: Usuario, servicio: Servicio) -> OpcionesFiltroCasos:
+    """B-05: veredas, fincas y cultivos que existen en los casos que ve el usuario (el técnico, sus asignados)."""
+    filas = await repo.opciones_filtro(servicio.session, alcance_de(actor))
+    veredas = {normalizar_codigo(v): v for v, *_ in filas}
+    fincas = {f: OpcionFinca(id=f, nombre=n, vereda=normalizar_codigo(v)) for v, f, n, _, _ in filas}
+    cultivos = {c: OpcionCultivo(id=c, nombre=n, finca_id=f) for _, f, _, c, n in filas}
+    return OpcionesFiltroCasos(
+        veredas=sorted((OpcionVereda(id=k, nombre=v) for k, v in veredas.items()), key=lambda o: o.nombre),
+        fincas=sorted(fincas.values(), key=lambda o: o.nombre),
+        cultivos=sorted(cultivos.values(), key=lambda o: o.nombre),
+    )
 
 
 @router.get("/{id_caso}", response_model=CasoDetalle, responses=RESPUESTAS)

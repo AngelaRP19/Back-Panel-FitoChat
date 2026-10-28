@@ -3,6 +3,7 @@
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, status
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +13,7 @@ from app.core.catalogos_api import CATEGORIAS, ESPECIES, EspecieCultivo, TipoCul
 from app.core.roles import Rol
 from app.core.security_cognito import UsuarioActual, requiere_rol
 from app.infrastructure.db.session import get_session
+from app.modules.panel_api.fincas import repository as repo_fincas
 from app.modules.panel_api.fincas.repository import CultivoFila, FiltrosFincas, FincaFila
 from app.modules.panel_api.fincas.schemas import (
     LATITUD_ESPERADA,
@@ -116,6 +118,19 @@ async def listar_fincas(
 async def crear_finca(datos: FincaIn, actor: SoloLider, servicio: Servicio) -> FincaOut:
     """Solo para un productor activo (RQF14). Las coordenadas raras se avisan en `advertencias`, sin bloquear."""
     return a_finca_out(await servicio.crear(datos, actor))
+
+
+class ResumenFincas(BaseModel):
+    fincas: int
+    cultivos: int
+    veredas: list[str] = Field(description="Nombres de las veredas con fincas registradas")
+
+
+@router.get("/fincas/resumen", response_model=ResumenFincas, responses=RESPUESTAS)
+async def resumen_fincas(_: SoloLider, servicio: Servicio) -> ResumenFincas:
+    """B-05: totales para la cabecera de la pantalla de fincas."""
+    fincas, cultivos, veredas = await repo_fincas.resumen(servicio.session)
+    return ResumenFincas(fincas=fincas, cultivos=cultivos, veredas=veredas)
 
 
 @router.get("/fincas/{id_finca}", response_model=FincaOut, responses=RESPUESTAS)

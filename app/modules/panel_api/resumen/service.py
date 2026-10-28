@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.paginacion import ParametrosPagina
 from app.core.catalogos_api import CATEGORIAS, ESTADOS_CASO, CategoriaFito, EstadoAlerta, EstadoCaso, normalizar_codigo
-from app.core.codigos import codigo_alerta, codigo_caso
+from app.core.codigos import codigo_alerta, codigo_caso, numero_de_id
 from app.core.roles import Rol
 from app.core.security_cognito import UsuarioActual
 from app.modules.panel_api.alertas import repository as alertas_repo
@@ -80,6 +80,7 @@ class ResumenService:
                 CasoPendiente(
                     id=p.id,
                     codigo=codigo_caso(p.id),
+                    numero=numero_de_id(p.id),
                     productor_nombre=p.nombre_productor,
                     enviado_a_panel_en=p.enviado,
                     tecnico_asignado_id=p.id_tecnico,

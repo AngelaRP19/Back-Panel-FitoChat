@@ -382,28 +382,31 @@ def test_navegacion_del_lider(api: TestClient, mundo: Mundo, casos: dict[str, st
     alerta(migrated, "GENERADA")
     alerta(migrated, "COMUNICADA")
     r = pedir(api, mundo.lider, "/api/v1/resumen/navegacion")
-    assert r == {"pendientes": 1, "alertas_generadas": 2}  # los pendientes son los casos sin técnico
+    assert (r["casos_pendientes"], r["alertas_generadas"]) == (1, 2)  # los pendientes son los casos sin técnico
+    assert r["notificaciones_nuevas"] == 0 and r["lider"] == {"nombre": mundo.lider.nombre}
 
 
 def test_navegacion_del_tecnico_solo_cuenta_lo_suyo(
     api: TestClient, mundo: Mundo, casos: dict[str, str], migrated: Engine
 ) -> None:
     alerta(migrated, "GENERADA")
-    assert pedir(api, mundo.t1, "/api/v1/resumen/navegacion") == {
-        "pendientes": 1,
-        "alertas_generadas": 0,
-    }  # B en revisión
-    assert pedir(api, mundo.t2, "/api/v1/resumen/navegacion") == {
-        "pendientes": 0,
-        "alertas_generadas": 0,
-    }  # C ya registrado
+    t1 = pedir(api, mundo.t1, "/api/v1/resumen/navegacion")
+    assert (t1["casos_pendientes"], t1["alertas_generadas"]) == (1, 0)  # B en revisión
+    assert t1["lider"] == {"nombre": mundo.lider.nombre}  # a quién pedirle un caso
+    t2 = pedir(api, mundo.t2, "/api/v1/resumen/navegacion")
+    assert (t2["casos_pendientes"], t2["alertas_generadas"]) == (0, 0)  # C ya registrado
 
 
 def test_navegacion_sigue_a_las_asignaciones(api: TestClient, mundo: Mundo, casos: dict[str, str]) -> None:
     api.patch(f"{URL}/{casos['A']}/asignacion", json={"tecnico_id": mundo.t2.id}, headers=mundo.lider.headers)
-    assert pedir(api, mundo.lider, "/api/v1/resumen/navegacion")["pendientes"] == 0
-    assert pedir(api, mundo.t2, "/api/v1/resumen/navegacion")["pendientes"] == 1
+    assert pedir(api, mundo.lider, "/api/v1/resumen/navegacion")["casos_pendientes"] == 0
+    assert pedir(api, mundo.t2, "/api/v1/resumen/navegacion")["casos_pendientes"] == 1
 
 
 def test_navegacion_vacia(api: TestClient, mundo: Mundo) -> None:
-    assert pedir(api, mundo.lider, "/api/v1/resumen/navegacion") == {"pendientes": 0, "alertas_generadas": 0}
+    assert pedir(api, mundo.lider, "/api/v1/resumen/navegacion") == {
+        "casos_pendientes": 0,
+        "alertas_generadas": 0,
+        "notificaciones_nuevas": 0,
+        "lider": {"nombre": mundo.lider.nombre},
+    }

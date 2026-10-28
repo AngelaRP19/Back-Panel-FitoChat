@@ -8,6 +8,7 @@ from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
 from app.infrastructure.db import procedimientos as sp
+from app.infrastructure.notificaciones_store import _EN_MEMORIA as NOTIFICACIONES
 from app.infrastructure.s3_storage_client import ErrorBorradoS3
 from app.infrastructure.whatsapp_client import WhatsAppSimulado
 from app.modules.scheduler import jobs
@@ -20,7 +21,7 @@ from app.modules.scheduler.jobs import (
     retencion,
 )
 from tests.api.territorio import crear_alerta, crear_caso, crear_identificacion, crear_respuesta, registrar_diagnostico
-from tests.infrastructure.db.factories import crear_tecnico
+from tests.infrastructure.db.factories import crear_lider, crear_tecnico
 from tests.modules.scheduler.conftest import AHORA, AlmacenS3, Entorno, inactivo
 
 MIN = timedelta(minutes=1)
@@ -334,7 +335,9 @@ def test_la_retencion_borra_las_versiones_de_s3_y_audita(entorno: Entorno, ctx: 
     s3.borrar_simple("evidencias/r.webp")
     assert s3.versiones("evidencias/r.webp") == 4
     r = retencion(entorno.motor, ctx)
-    assert r.detalle == {"fotos": 1, "versiones_s3": 4} and s3.versiones("evidencias/r.webp") == 0
+    assert (
+        r.detalle == {"fotos": 1, "versiones_s3": 4, "proximos_a_vencer": 0} and s3.versiones("evidencias/r.webp") == 0
+    )
     assert not existe(entorno.motor, id_caso) and filas(entorno.motor, "SELECT 1 FROM fotografias") == []
     [registro] = filas(entorno.motor, "SELECT * FROM auditoria WHERE accion = 'BORRAR_RETENCION'")
     assert (
@@ -390,6 +393,34 @@ def test_la_retencion_no_toca_los_casos_de_otros_estados_aunque_esten_viejos(ent
     assert retencion(entorno.motor, ctx).procesados == 0 and existe(entorno.motor, descartable)
 
 
+def lider_activo(entorno: Entorno) -> str:
+    NOTIFICACIONES.vaciar()
+    with Session(entorno.motor) as s:
+        lider = crear_lider(s)
+        s.commit()
+        return lider.id_lider_tecnico
+
+
+def avisos(id_lider: str) -> list[Any]:
+    return NOTIFICACIONES.listar(id_lider, datetime.now(UTC) - timedelta(minutes=5))
+
+
+def test_la_retencion_avisa_a_los_lideres_de_los_que_vencen_pronto(entorno: Entorno, ctx: Contexto) -> None:
+    id_lider = lider_activo(entorno)
+    caso_cerrado(entorno, hoy_bogota() + timedelta(days=3))
+    caso_cerrado(entorno, hoy_bogota() + timedelta(days=15))
+    caso_cerrado(entorno, hoy_bogota() + timedelta(days=16))  # fuera de los 15 días
+    assert retencion(entorno.motor, ctx).detalle["proximos_a_vencer"] == 2
+    [aviso] = avisos(id_lider)
+    assert aviso.tipo == "PROXIMOS_A_VENCER" and aviso.texto.startswith("2 casos")
+
+
+def test_sin_casos_por_vencer_no_hay_aviso(entorno: Entorno, ctx: Contexto) -> None:
+    id_lider = lider_activo(entorno)
+    retencion(entorno.motor, ctx)
+    assert avisos(id_lider) == []
+
+
 # --- barrido de alertas ------------------------------------------------------------------------------------------------
 
 
@@ -409,6 +440,25 @@ def test_el_barrido_genera_las_alertas_que_faltaban_y_no_las_repite(entorno: Ent
     assert (r.exitosos, r.errores, r.detalle) == (1, 0, {"alertas_nuevas": 1})
     assert evaluar_alertas(entorno.motor, ctx).detalle == {"alertas_nuevas": 0}
     assert len(filas(entorno.motor, "SELECT 1 FROM alerta_casos")) == 3
+
+
+def test_el_barrido_avisa_a_los_lideres_de_cada_alerta_nueva(entorno: Entorno, ctx: Contexto) -> None:
+    id_lider = lider_activo(entorno)
+    with Session(entorno.motor) as s:
+        tecnico = crear_tecnico(s)
+        s.commit()
+        id_tecnico = tecnico.id_tecnico
+    for _ in range(3):
+        id_caso = crear_caso(entorno.motor, entorno.id_cultivo, "GULUPA", "Registrado", tecnico=id_tecnico)
+        registrar_diagnostico(entorno.motor, id_caso, "CONFIRMADO", "TRIPS")
+    with entorno.motor.begin() as c:
+        c.execute(text("UPDATE diagnosticos SET fecha_diagnostico = :t"), {"t": AHORA - 2 * HORA})
+    evaluar_alertas(entorno.motor, ctx)
+    [id_alerta] = [f["id_alerta"] for f in filas(entorno.motor, "SELECT id_alerta FROM alertas")]
+    [aviso] = avisos(id_lider)
+    assert aviso.tipo == "ALERTA_GENERADA" and aviso.enlace == f"/alertas/{id_alerta}" and "Trips" in aviso.texto
+    evaluar_alertas(entorno.motor, ctx)
+    assert len(avisos(id_lider)) == 1  # sin alertas nuevas, sin avisos nuevos
 
 
 def test_el_barrido_sin_casos_no_hace_nada(entorno: Entorno, ctx: Contexto) -> None:

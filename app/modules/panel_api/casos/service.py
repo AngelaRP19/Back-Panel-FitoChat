@@ -62,6 +62,8 @@ from app.modules.panel_api.casos.schemas import (
     ResponsableEvento,
     RespuestaOut,
 )
+from app.modules.panel_api.notificaciones import service as avisos
+from app.modules.panel_api.notificaciones.service import Notificador
 
 MAXIMO_FOTOS_UTILES = 12  # guía §2: ≤ 12 útiles por caso
 
@@ -162,10 +164,21 @@ def permisos(fila: CasoFila, actor: UsuarioActual) -> tuple[bool, bool, bool]:
     )
 
 
+TEXTO_RESULTADO = {
+    "CONFIRMADO": "Confirmado",
+    "OTRA_PATOLOGIA": "Otra patología",
+    "NO_IDENTIFICADO": "No identificado",
+    "REQUIERE_VISITA": "Requiere visita",
+}
+
+
 class CasosService:
-    def __init__(self, session: AsyncSession, s3: S3StorageClient | None = None) -> None:
+    def __init__(
+        self, session: AsyncSession, s3: S3StorageClient | None = None, notificador: Notificador | None = None
+    ) -> None:
         self.session = session
         self.s3 = s3
+        self.notificador = notificador or Notificador()
 
     async def _fila_o_404(self, actor: UsuarioActual, id_caso: str) -> CasoFila:
         fila = await repo.obtener(self.session, alcance_de(actor), id_caso)
@@ -418,6 +431,11 @@ class CasosService:
                 raise ApiError(409, "TRANSICION_INVALIDA", "El caso ya no admite asignación.") from None
             raise
         fila = await self._fila_o_404(actor, id_caso)
+        # B-10: después del commit. El técnico recibe el caso en su campana.
+        await self.notificador.avisar(
+            [id_tecnico], avisos.CASO_ASIGNADO, "Caso asignado", f"{codigo_caso(id_caso)} · {fila.nombre_productor}",
+            f"/casos/{id_caso}",
+        )  # fmt: skip
         return a_resumen(fila)
 
     # --- Diagnóstico y cierre ----------------------------------------------------------------------------------------
@@ -453,13 +471,32 @@ class CasosService:
                 datos.descripcion,
                 datos.observaciones,
             )
+            antes = {a[0] for a in await repo.alertas_generadas(self.session)}
             if id_categoria and await repo.categoria_transmisible(self.session, id_categoria):
                 await repo.evaluar_alerta(self.session, id_categoria)
+            alertas_nuevas = [a for a in await repo.alertas_generadas(self.session) if a[0] not in antes]
             await self.session.commit()
         except DBAPIError as error:
             await self.session.rollback()
             raise _traducir(error) from None
+        await self._avisar_diagnostico(actor, id_caso, fila, datos.resultado_tecnico.value, alertas_nuevas)
         return await self.detalle(actor, id_caso)
+
+    async def _avisar_diagnostico(
+        self, actor: UsuarioActual, id_caso: str, fila: CasoFila, resultado: str, alertas: list[tuple[str, str, str]]
+    ) -> None:
+        """B-10: después del commit. Los líderes ven el diagnóstico y las alertas que generó."""
+        lideres = await avisos.lideres_activos(self.session)
+        await self.notificador.avisar(
+            lideres, avisos.DIAGNOSTICO_REGISTRADO, "Diagnóstico registrado",
+            f"{codigo_caso(id_caso)} · {TEXTO_RESULTADO.get(resultado, resultado)} · {fila.nombre_tecnico or actor.id}",
+            f"/casos/{id_caso}",
+        )  # fmt: skip
+        for id_alerta, categoria, vereda in alertas:
+            await self.notificador.avisar(
+                lideres, avisos.ALERTA_GENERADA, "Alerta generada",
+                f"Posible concentración de {categoria}" + (f" · {vereda}" if vereda else ""), f"/alertas/{id_alerta}",
+            )  # fmt: skip
 
     @staticmethod
     def _validar_diagnostico(datos: DiagnosticoIn, fila: CasoFila) -> tuple[str | None, str | None]:

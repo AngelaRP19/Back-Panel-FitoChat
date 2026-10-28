@@ -236,6 +236,12 @@ class ExplicacionOut(BaseModel):
     regla: str = Field(description="Regla aplicada: identificado, ambiguo o no identificado")
 
 
+class LiderRef(BaseModel):
+    nombre: str
+
+
 class NavegacionOut(BaseModel):
-    pendientes: int = Field(description="Líder: casos sin técnico. Técnico: sus casos en revisión")
+    casos_pendientes: int = Field(description="Líder: casos sin técnico. Técnico: sus casos en revisión")
     alertas_generadas: int = Field(description="Alertas GENERADA por revisar (solo las gestiona el líder)")
+    notificaciones_nuevas: int = Field(description="Campana: sin leer de los últimos 7 días")
+    lider: LiderRef | None = Field(description="Líder técnico activo: a quién pedirle un caso que no aparece")
