@@ -20,6 +20,8 @@ from app.infrastructure.cognito_admin_client import CognitoSimulado, get_cognito
 from app.infrastructure.consultas_store import _EN_MEMORIA as CONSULTAS_EN_MEMORIA
 from app.infrastructure.db.models import LiderTecnico, Tecnico
 from app.infrastructure.db.session import get_session
+from app.infrastructure.documentos_store import _ARCHIVOS_EN_MEMORIA as ARCHIVOS_EN_MEMORIA
+from app.infrastructure.documentos_store import _EN_MEMORIA as DOCUMENTOS_EN_MEMORIA
 from app.infrastructure.notificaciones_store import _EN_MEMORIA as NOTIFICACIONES_EN_MEMORIA
 from app.main import app
 from app.modules.panel_api.cuentas.router_auth import LIMITADOR_VERIFICAR_CORREO
@@ -64,6 +66,8 @@ def api(migrated: Engine, cognito: CognitoSimulado) -> Iterator[TestClient]:
     vaciar(migrated)
     NOTIFICACIONES_EN_MEMORIA.vaciar()  # las cuentas se recrean con los mismos ids en cada prueba
     CONSULTAS_EN_MEMORIA.vaciar()
+    DOCUMENTOS_EN_MEMORIA.vaciar()
+    ARCHIVOS_EN_MEMORIA.vaciar()
     app.dependency_overrides[get_session] = _sesion_por_solicitud
     app.dependency_overrides[get_cognito_admin] = lambda: cognito
     LIMITADOR_VERIFICAR_CORREO.reiniciar()

@@ -8,6 +8,7 @@ from app.modules.panel_api.consulta.router import router as consulta_router
 from app.modules.panel_api.cuentas.router import router as cuentas_router
 from app.modules.panel_api.cuentas.router_auth import router as auth_router
 from app.modules.panel_api.cuentas.router_tecnicos import router as tecnicos_router
+from app.modules.panel_api.documentos.router import router as documentos_router
 from app.modules.panel_api.fincas.router import catalogos as catalogos_router
 from app.modules.panel_api.fincas.router import router as fincas_router
 from app.modules.panel_api.mapa.router import router as mapa_router
@@ -32,3 +33,4 @@ router.include_router(notificaciones_router)
 router.include_router(mapa_router)
 router.include_router(alertas_router)
 router.include_router(reportes_router)
+router.include_router(documentos_router)

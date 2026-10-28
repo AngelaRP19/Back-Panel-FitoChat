@@ -46,6 +46,7 @@ class Settings(BaseSettings):
 
     cors_origins: str = ""
     max_body_bytes: int = 10 * 1024 * 1024  # propuesto en la guía (§7)
+    max_body_bytes_documentos: int = 21 * 1024 * 1024  # PDF de hasta 20 MB + el sobre multipart (B-07)
 
     # Identificación preliminar (guía §2): una categoría con menos de este porcentaje no se sugiere.
     umbral_coincidencia: int = 50

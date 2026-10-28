@@ -421,6 +421,17 @@ def test_sin_casos_por_vencer_no_hay_aviso(entorno: Entorno, ctx: Contexto) -> N
     assert avisos(id_lider) == []
 
 
+def test_la_retencion_nunca_borra_la_documentacion(entorno: Entorno, ctx: Contexto, s3: AlmacenS3) -> None:
+    """B-07: los PDF de `documentos/` comparten el bucket; aunque una fila apuntara ahí, no se borran."""
+    id_caso = caso_cerrado(entorno, hoy_bogota() - timedelta(days=1), ("evidencias/r.webp", "documentos/DOC-1.pdf"))
+    s3.subir("evidencias/r.webp")
+    s3.subir("documentos/DOC-1.pdf")
+    versiones_pdf = s3.versiones("documentos/DOC-1.pdf")
+    retencion(entorno.motor, ctx)
+    assert not existe(entorno.motor, id_caso)
+    assert s3.versiones("evidencias/r.webp") == 0 and s3.versiones("documentos/DOC-1.pdf") == versiones_pdf > 0
+
+
 # --- barrido de alertas ------------------------------------------------------------------------------------------------
 
 
