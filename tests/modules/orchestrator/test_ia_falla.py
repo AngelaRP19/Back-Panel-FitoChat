@@ -34,7 +34,9 @@ def con_ia(sistema: Sistema, ia: AiSimulado) -> list[float]:
 def abrir_caso(sistema: Sistema) -> list[str]:
     productor_con_finca(sistema.motor)
     sistema.escribir("hola")
-    return sistema.escribir("1")
+    sistema.pulsar("1")  # la finca
+    sistema.pulsar("1")  # el lote
+    return sistema.pulsar("1")  # todo el lote
 
 
 def test_un_fallo_pasajero_se_reintenta_y_el_productor_no_se_entera(sistema: Sistema) -> None:
@@ -83,8 +85,10 @@ def test_el_orquestador_no_oculta_errores_que_no_son_de_la_ia(sistema: Sistema) 
     con_ia(sistema, Defectuosa())
     productor_con_finca(sistema.motor)
     sistema.escribir("hola")
+    sistema.pulsar("1")  # la finca
+    sistema.pulsar("1")  # el lote
     try:
-        sistema.escribir("1")
+        sistema.pulsar("1")  # todo el lote: se abre el caso y la IA falla
     except Exception as error:  # el consumidor reintentará el mensaje: es un fallo nuestro, no de la IA
         assert isinstance(error, KeyError)
     else:

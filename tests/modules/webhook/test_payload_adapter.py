@@ -1,3 +1,7 @@
+from typing import Any
+
+import pytest
+
 from app.modules.webhook.payload_adapter import WhatsAppPayloadAdapter
 from tests.payloads import PHONE, image_message, status_event, text_message
 
@@ -24,30 +28,33 @@ def test_payload_vacio_o_sin_entry() -> None:
     assert WhatsAppPayloadAdapter.extract_messages({"entry": [{"changes": [{"value": {}}]}]}) == []
 
 
+def un_mensaje(tipo: str, bloque: dict[str, Any]) -> dict[str, Any]:
+    mensaje = {"from": PHONE, "id": f"wamid.{tipo}", "timestamp": "1", "type": tipo, tipo: bloque}
+    return {"entry": [{"changes": [{"value": {"messages": [mensaje]}}]}]}
+
+
+def test_la_ubicacion_compartida_trae_latitud_y_longitud() -> None:
+    [m] = WhatsAppPayloadAdapter.extract_messages(
+        un_mensaje("location", {"latitude": 5.2712, "longitude": -73.1702, "name": "Finca"})
+    )
+    assert m["content"] == {"latitud": 5.2712, "longitud": -73.1702, "nombre": "Finca", "direccion": None}
+
+
+@pytest.mark.parametrize(("tipo", "clave"), [("button_reply", "button_reply"), ("list_reply", "list_reply")])
+def test_boton_o_fila_pulsados_traen_el_id_de_la_opcion(tipo: str, clave: str) -> None:
+    bloque = {"type": tipo, clave: {"id": "2", "title": "La Esperanza"}}
+    [m] = WhatsAppPayloadAdapter.extract_messages(un_mensaje("interactive", bloque))
+    assert m["type"] == "interactive" and m["content"] == {"tipo": tipo, "id": "2", "titulo": "La Esperanza"}
+
+
+def test_boton_de_plantilla_usa_su_payload() -> None:
+    [m] = WhatsAppPayloadAdapter.extract_messages(un_mensaje("button", {"payload": "si", "text": "Sí"}))
+    assert m["content"] == {"tipo": "button", "id": "si", "titulo": "Sí"}
+
+
 def test_tipo_no_soportado_conserva_bloque_original() -> None:
-    payload = {
-        "entry": [
-            {
-                "changes": [
-                    {
-                        "value": {
-                            "messages": [
-                                {
-                                    "from": PHONE,
-                                    "id": "wamid.LOC",
-                                    "timestamp": "1",
-                                    "type": "location",
-                                    "location": {"latitude": 5.3, "longitude": -73.2},
-                                }
-                            ]
-                        }
-                    }
-                ]
-            }
-        ]
-    }
-    [message] = WhatsAppPayloadAdapter.extract_messages(payload)
-    assert message["content"] == {"raw": {"latitude": 5.3, "longitude": -73.2}}
+    [m] = WhatsAppPayloadAdapter.extract_messages(un_mensaje("reaction", {"emoji": "👍"}))
+    assert m["content"] == {"raw": {"emoji": "👍"}}
 
 
 def test_to_queue_body_usa_from() -> None:

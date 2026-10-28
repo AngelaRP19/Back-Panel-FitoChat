@@ -43,6 +43,17 @@ class Sistema:
         """Manda un mensaje de texto y devuelve lo que el bot respondió."""
         return self._enviar(telefono, "text", {"text": texto})
 
+    def pulsar(self, id_opcion: str, titulo: str = "", telefono: str = TELEFONO) -> list[str]:
+        """Pulsa un botón o una fila de una lista (WhatsApp manda el id de la opción)."""
+        return self._enviar(telefono, "interactive", {"tipo": "button_reply", "id": id_opcion, "titulo": titulo})
+
+    def ubicacion(self, latitud: float = 5.2712, longitud: float = -73.1702, telefono: str = TELEFONO) -> list[str]:
+        """Comparte la ubicación actual (por defecto, un punto de Zetaquirá)."""
+        return self._enviar(telefono, "location", {"latitud": latitud, "longitud": longitud})
+
+    def ultimo_interactivo(self) -> Any:
+        return self.whatsapp.interactivos[-1][1]
+
     def foto(self, media_id: str = "media-1", descripcion: str = "", telefono: str = TELEFONO) -> list[str]:
         contenido: dict[str, Any] = {"media_id": media_id, "mime_type": "image/jpeg"}
         if descripcion:

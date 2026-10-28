@@ -68,5 +68,21 @@ class WhatsAppPayloadAdapter:
             if media.get("caption"):
                 content["caption"] = media["caption"]
             return content
-        # Tipos aún no soportados (location, interactive, reaction...): se conserva el bloque original.
+        if msg_type == "interactive":  # botón o fila de lista pulsados: el id es la opción elegida
+            interactivo = message.get("interactive") or {}
+            tipo = str(interactivo.get("type", ""))
+            respuesta = interactivo.get(tipo) or {}  # button_reply o list_reply
+            return {"tipo": tipo, "id": str(respuesta.get("id", "")), "titulo": str(respuesta.get("title", ""))}
+        if msg_type == "button":  # botón de respuesta rápida de una plantilla
+            boton = message.get("button") or {}
+            return {"tipo": "button", "id": str(boton.get("payload", "")), "titulo": str(boton.get("text", ""))}
+        if msg_type == "location":
+            lugar = message.get("location") or {}
+            return {
+                "latitud": lugar.get("latitude"),
+                "longitud": lugar.get("longitude"),
+                "nombre": lugar.get("name"),
+                "direccion": lugar.get("address"),
+            }
+        # Tipos aún no soportados (reaction, contacts...): se conserva el bloque original.
         return {"raw": message.get(msg_type) or {}}

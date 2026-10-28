@@ -7,7 +7,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.core.catalogos_api import CATEGORIAS, ESPECIES, ESTADOS_CASO, TIPOS_CULTIVO, EstadoCaso
+from app.core.catalogos_api import CATEGORIAS, ESPECIES, ESTADOS_CASO, TIPOS_CULTIVO, EstadoCaso, normalizar_codigo
 from app.core.evidencias import PREGUNTA_FOTO
 from app.infrastructure.db import procedimientos as sp
 from app.infrastructure.db.models import (
@@ -15,6 +15,7 @@ from app.infrastructure.db.models import (
     Cultivo,
     CultivoEspecie,
     Diagnostico,
+    Finca,
     Fotografia,
     Pregunta,
     Productor,
@@ -91,6 +92,39 @@ def fincas(s: Session, id_productor: str) -> list[tuple[str, str]]:
     return [(str(a), str(b)) for a, b in filas]
 
 
+def veredas(s: Session) -> list[str]:
+    """Nombres de las veredas que ya tienen fincas, sin repetir grafías (`San Luis` y `SAN LUIS` son la misma)."""
+    unicas: dict[str, str] = {}
+    for (nombre,) in s.execute(text("SELECT DISTINCT vereda_sector_finca FROM fincas ORDER BY 1")):
+        unicas.setdefault(normalizar_codigo(str(nombre)), str(nombre))
+    return sorted(unicas.values(), key=lambda v: normalizar_codigo(v))
+
+
+def veredas_de_fincas(s: Session, ids: list[str]) -> dict[str, str]:
+    filas = s.execute(text("SELECT id_finca, vereda_sector_finca FROM fincas WHERE id_finca = ANY(:ids)"), {"ids": ids})
+    return {str(i): str(v) for i, v in filas}
+
+
+def crear_finca(s: Session, id_productor: str, nombre: str, vereda: str, latitud: float, longitud: float) -> str:
+    finca = Finca(
+        nombre_finca=nombre,
+        vereda_sector_finca=vereda,
+        latitud_finca=round(latitud, 6),
+        longitud_finca=round(longitud, 6),
+        id_productor=id_productor,
+    )
+    s.add(finca)
+    s.flush()
+    return finca.id_finca
+
+
+def ubicacion_de_finca(s: Session, id_finca: str) -> tuple[float, float]:
+    lat, lon = s.execute(
+        text("SELECT latitud_finca, longitud_finca FROM fincas WHERE id_finca = :f"), {"f": id_finca}
+    ).one()
+    return float(lat), float(lon)
+
+
 def nombre_de_finca(s: Session, id_finca: str) -> str:
     return str(s.scalar(text("SELECT nombre_finca FROM fincas WHERE id_finca = :f"), {"f": id_finca}) or "")
 
@@ -121,15 +155,20 @@ def nombre_de_cultivo_en_uso(s: Session, id_finca: str, nombre: str) -> bool:
     )
 
 
-def crear_cultivo(s: Session, id_finca: str, nombre: str, tipo: str, especies: list[str]) -> str:
-    """El cultivo nace con la ubicación de su finca (la distancia de las alertas se mide con ella)."""
-    lat, lon = s.execute(
-        text("SELECT latitud_finca, longitud_finca FROM fincas WHERE id_finca = :f"), {"f": id_finca}
-    ).one()
+def crear_cultivo(
+    s: Session,
+    id_finca: str,
+    nombre: str,
+    tipo: str,
+    especies: list[str],
+    ubicacion: tuple[float, float] | None = None,
+) -> str:
+    """El lote con la ubicación que compartió el productor desde dentro de él; sin ella, la de su finca."""
+    lat, lon = ubicacion or ubicacion_de_finca(s, id_finca)
     cultivo = Cultivo(
         nombre_cultivo=nombre,
-        latitud_cultivo=lat,
-        longitud_cultivo=lon,
+        latitud_cultivo=round(lat, 6),
+        longitud_cultivo=round(lon, 6),
         id_finca=id_finca,
         tipo_cultivo=TIPOS_CULTIVO.a_nombre(tipo),
     )
@@ -323,14 +362,14 @@ def guardar_identificacion(
     )
 
 
-def registrar_auditoria(s: Session, accion: str, descripcion: str) -> None:
+def registrar_auditoria(s: Session, accion: str, descripcion: str, entidad: str = "productores") -> None:
     s.execute(
         sp.REGISTRAR_AUDITORIA,
         {
             "origen": "SISTEMA",
             "id_actor": None,
             "accion": accion,
-            "entidad": "productores",
+            "entidad": entidad,
             "descripcion": descripcion,
             "valor_anterior": None,
             "valor_nuevo": None,

@@ -3,7 +3,8 @@
 En modo simulado (`INTEGRACION_WHATSAPP=simulada`) nunca sale un mensaje real: el resultado de cada envío es
 `SIMULADO`, no `ENVIADO`, para que nadie confunda una demostración con un aviso entregado.
 
-El cliente real (`WhatsAppCloud`) envía texto y descarga las fotos que mandan los productores (Graph API: primero se
+El cliente real (`WhatsAppCloud`) envía texto y mensajes interactivos (botones, listas, pedido de ubicación y
+ubicación; ver `whatsapp_mensajes`) y descarga las fotos que mandan los productores (Graph API: primero se
 pide la URL del medio y luego se descarga con el mismo token). Un número que Meta rechaza no es una excepción: se
 informa en el resultado; una falla de red o un 5xx tampoco rompe el flujo, pero sí queda registrada como `FALLIDO`.
 """
@@ -17,6 +18,7 @@ from typing import Any, Protocol
 import httpx
 
 from app.core.config import get_settings
+from app.infrastructure.whatsapp_mensajes import Interactivo, texto_visible
 
 ENVIADO = "ENVIADO"
 SIMULADO = "SIMULADO"
@@ -48,6 +50,10 @@ class WhatsAppClient(Protocol):
         """Envía un mensaje de texto. No lanza excepciones por un número rechazado: lo informa en el resultado."""
         ...
 
+    def enviar_interactivo(self, telefono_e164: str, mensaje: Interactivo) -> ResultadoEnvio:
+        """Envía botones, una lista, un pedido de ubicación o una ubicación. Igual que `enviar_texto`: no lanza."""
+        ...
+
     def descargar_media(self, media_id: str) -> bytes:
         """Descarga una foto recibida. Lanza `ErrorDescargaMedia` si no se pudo."""
         ...
@@ -57,7 +63,8 @@ class WhatsAppClient(Protocol):
 class WhatsAppSimulado:
     """No envía nada: anota los mensajes (para las pruebas) y puede simular números que fallan."""
 
-    enviados: list[tuple[str, str]] = field(default_factory=list)
+    enviados: list[tuple[str, str]] = field(default_factory=list)  # teléfono y texto visible de cada mensaje
+    interactivos: list[tuple[str, Interactivo]] = field(default_factory=list)  # los interactivos, completos
     fallan: set[str] = field(default_factory=set)
     medios: dict[str, bytes] = field(default_factory=dict)  # media_id → bytes de la foto
     _consecutivo: "count[int]" = field(default_factory=lambda: count(1))
@@ -68,6 +75,13 @@ class WhatsAppSimulado:
         self.enviados.append((telefono_e164, texto))
         return ResultadoEnvio(SIMULADO, id_externo=f"sim-{next(self._consecutivo)}")
 
+    def enviar_interactivo(self, telefono_e164: str, mensaje: Interactivo) -> ResultadoEnvio:
+        if telefono_e164 in self.fallan:
+            return ResultadoEnvio(FALLIDO, error="Simulado: el número rechazó el mensaje")
+        self.enviados.append((telefono_e164, texto_visible(mensaje)))
+        self.interactivos.append((telefono_e164, mensaje))
+        return ResultadoEnvio(SIMULADO, id_externo=f"sim-{next(self._consecutivo)}")
+
     def descargar_media(self, media_id: str) -> bytes:
         if media_id not in self.medios:
             raise ErrorDescargaMedia(f"Simulado: no hay foto {media_id}")
@@ -75,6 +89,7 @@ class WhatsAppSimulado:
 
     def reiniciar(self) -> None:
         self.enviados.clear()
+        self.interactivos.clear()
         self.fallan.clear()
         self.medios.clear()
 
@@ -97,12 +112,13 @@ class WhatsAppCloud:
         )
 
     def enviar_texto(self, telefono_e164: str, texto: str) -> ResultadoEnvio:
-        cuerpo: dict[str, Any] = {
-            "messaging_product": "whatsapp",
-            "to": telefono_e164,
-            "type": "text",
-            "text": {"body": texto, "preview_url": False},
-        }
+        return self._enviar(telefono_e164, {"type": "text", "text": {"body": texto, "preview_url": False}})
+
+    def enviar_interactivo(self, telefono_e164: str, mensaje: Interactivo) -> ResultadoEnvio:
+        return self._enviar(telefono_e164, mensaje.cuerpo())
+
+    def _enviar(self, telefono_e164: str, contenido: dict[str, Any]) -> ResultadoEnvio:
+        cuerpo: dict[str, Any] = {"messaging_product": "whatsapp", "to": telefono_e164, **contenido}
         try:
             respuesta = self._http.post(f"{self._base}/{self._phone_number_id}/messages", json=cuerpo)
         except httpx.HTTPError as error:

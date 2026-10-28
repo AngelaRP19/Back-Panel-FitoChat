@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 from app.infrastructure.ai_client import Turno
 from app.infrastructure.db.models import LiderTecnico
 from app.infrastructure.notificaciones_store import _EN_MEMORIA as NOTIFICACIONES
+from app.infrastructure.whatsapp_client import FALLIDO, ResultadoEnvio
+from app.infrastructure.whatsapp_mensajes import Botones, Lista, PedirUbicacion, Ubicacion
 from app.modules.orchestrator import textos as t
 from app.modules.orchestrator.puertos import Identificacion
 from tests.modules.orchestrator.conftest import (
@@ -30,8 +32,13 @@ def junto(respuestas: list[str]) -> str:
 
 
 def hasta_afectacion(s: Sistema, **kwargs: Any) -> None:
+    """Productor con una finca y un lote de una especie: elige la finca y el lote en sus listas."""
     productor_con_finca(s.motor, **kwargs)
     s.escribir("hola")
+    assert s.paso() == "ELEGIR_FINCA"
+    s.pulsar("1")
+    assert s.paso() == "ELEGIR_CULTIVO"
+    s.pulsar("1")
     assert s.paso() == "AFECTACION"
 
 
@@ -76,7 +83,8 @@ def test_un_numero_desconocido_se_registra_con_consentimiento(sistema: Sistema) 
     for malo in ("1", "?", "A"):
         assert sistema.escribir(malo) == [t.NOMBRE_INVALIDO] and sistema.paso() == "NOMBRE"
     respuestas = sistema.escribir("  Juan   Pérez ")
-    assert respuestas[0] == t.BIENVENIDA_NUEVO.format(nombre="Juan") and respuestas[-1] == t.SIN_FINCAS
+    assert respuestas[0] == t.BIENVENIDA_NUEVO.format(nombre="Juan")
+    assert respuestas[-2:] == [t.SIN_FINCAS, t.PEDIR_NOMBRE_FINCA]
     [p] = sistema.consulta("SELECT * FROM productores")
     assert (p["nombre_productor"], p["telefono_productor"], p["estado_cuenta_productor"]) == (
         "Juan Pérez",
@@ -86,7 +94,7 @@ def test_un_numero_desconocido_se_registra_con_consentimiento(sistema: Sistema) 
     assert p["fecha_consentimiento"] is not None and p["id_productor"].startswith("PRO-")
     [auditoria] = sistema.consulta("SELECT * FROM auditoria WHERE accion = 'REGISTRO_PRODUCTOR'")
     assert auditoria["origen"] == "SISTEMA" and TELEFONO not in str(auditoria) and "3001112233" not in str(auditoria)
-    assert sistema.paso() == "INICIO"  # sin fincas no hay consulta: la ANUC debe registrarlas
+    assert sistema.paso() == "FINCA_NOMBRE"  # sin fincas: registra la primera desde el chat
 
 
 def test_un_productor_del_panel_sin_consentimiento_debe_aceptar(sistema: Sistema) -> None:
@@ -94,7 +102,7 @@ def test_un_productor_del_panel_sin_consentimiento_debe_aceptar(sistema: Sistema
     assert sistema.escribir("hola") == [t.SALUDO_CON_NOMBRE.format(nombre="Ana"), t.CONSENTIMIENTO]
     respuestas = sistema.escribir("sí")
     assert sistema.consulta("SELECT fecha_consentimiento AS f FROM productores")[0]["f"] is not None
-    assert respuestas[-1] == t.PEDIR_AFECTACION and sistema.paso() == "AFECTACION"
+    assert respuestas[-1] == t.ELEGIR_FINCA and sistema.paso() == "ELEGIR_FINCA"
 
 
 def test_un_productor_deshabilitado_no_abre_consultas(sistema: Sistema) -> None:
@@ -103,70 +111,190 @@ def test_un_productor_deshabilitado_no_abre_consultas(sistema: Sistema) -> None:
     assert sistema.consulta("SELECT 1 FROM casos") == []
 
 
-def test_un_productor_sin_fincas_es_remitido_a_la_anuc(sistema: Sistema) -> None:
+def test_un_productor_sin_fincas_registra_la_primera(sistema: Sistema) -> None:
     productor_con_finca(sistema.motor, fincas=0)
-    assert sistema.escribir("hola")[-1] == t.SIN_FINCAS and sistema.paso() == "INICIO"
+    assert sistema.escribir("hola")[-2:] == [t.SIN_FINCAS, t.PEDIR_NOMBRE_FINCA]
+    assert sistema.paso() == "FINCA_NOMBRE"
 
 
-# --- finca, cultivo, especie y zona --------------------------------------------------------------------------------
+# --- finca: elegir o registrar --------------------------------------------------------------------------------------
 
 
-def test_con_una_sola_finca_cultivo_y_especie_se_eligen_solos(sistema: Sistema) -> None:
+def test_las_fincas_se_muestran_en_una_lista_con_la_opcion_de_registrar(sistema: Sistema) -> None:
     productor_con_finca(sistema.motor)
-    respuestas = junto(sistema.escribir("hola"))
-    assert "La Esperanza" in respuestas and "Lote 1" in respuestas and t.PEDIR_AFECTACION in respuestas
+    assert sistema.escribir("hola")[-1] == t.ELEGIR_FINCA and sistema.paso() == "ELEGIR_FINCA"
+    lista = sistema.ultimo_interactivo()
+    assert isinstance(lista, Lista) and lista.boton == t.VER_FINCAS
+    assert [(o.id, o.titulo, o.descripcion) for o in lista.opciones] == [
+        ("1", "La Esperanza", "Centro"),
+        ("nueva", t.FILA_FINCA_NUEVA, t.DESCRIPCION_FINCA_NUEVA),
+    ]
+    assert sistema.pulsar("1") == [t.ELEGIR_CULTIVO.format(finca="La Esperanza")]
+    lotes = sistema.ultimo_interactivo()
+    assert [(o.id, o.titulo, o.descripcion) for o in lotes.opciones] == [
+        ("1", "Lote 1", "Gulupa"),
+        ("nuevo", t.FILA_LOTE_NUEVO, t.DESCRIPCION_LOTE_NUEVO),
+    ]
+    assert sistema.pulsar("1") == [t.PEDIR_AFECTACION]  # una sola especie: se elige sola
+    assert [o.titulo for o in sistema.ultimo_interactivo().opciones] == [t.BOTON_TODO, t.BOTON_UNA_PARTE]
 
 
-def test_varias_fincas_se_eligen_por_numero_o_por_nombre(sistema: Sistema) -> None:
+def test_varias_fincas_se_eligen_por_lista_numero_o_nombre(sistema: Sistema) -> None:
     productor_con_finca(sistema.motor, fincas=2)
-    assert "1. Finca 1\n2. Finca 2" in junto(sistema.escribir("hola"))
+    sistema.escribir("hola")
+    assert [o.titulo for o in sistema.ultimo_interactivo().opciones][:2] == ["Finca 1", "Finca 2"]
     assert sistema.escribir("7")[0].startswith("No te entendí") and sistema.paso() == "ELEGIR_FINCA"
-    assert sistema.escribir("la que no existe")[0].startswith("No te entendí")
-    sistema.escribir("finca 1")  # por nombre
-    assert sistema.paso() == "AFECTACION"
+    assert sistema.escribir("la que no existe")[-1] == t.ELEGIR_FINCA  # vuelve a mostrar la lista
+    sistema.escribir("finca 1")  # escribir el nombre también sirve
+    assert sistema.paso() == "ELEGIR_CULTIVO"
 
 
-def test_varios_cultivos_y_varias_especies(sistema: Sistema) -> None:
+def test_registrar_una_finca_con_su_ubicacion(sistema: Sistema) -> None:
+    productor_con_finca(sistema.motor, fincas=0)
+    sistema.escribir("hola")
+    assert sistema.escribir("123") == [t.NOMBRE_FINCA_INVALIDO] and sistema.paso() == "FINCA_NOMBRE"
+    assert sistema.escribir("  La   Primavera ") == [t.PEDIR_VEREDA_ESCRITA.format(finca="La Primavera")]
+    pedido = t.PEDIR_UBICACION_FINCA.format(finca="La Primavera")
+    assert sistema.escribir("San Luis") == [pedido] and sistema.paso() == "FINCA_UBICACION"
+    assert isinstance(sistema.ultimo_interactivo(), PedirUbicacion)
+    assert sistema.escribir("estoy en la finca") == [t.UBICACION_FALTA, pedido]  # sin ubicación no avanza
+    respuestas = sistema.ubicacion(5.2701, -73.1689)
+    mapa, pregunta = (m for _, m in sistema.whatsapp.interactivos[-2:])
+    assert isinstance(mapa, Ubicacion) and (mapa.latitud, mapa.longitud, mapa.nombre) == (
+        5.2701,
+        -73.1689,
+        "La Primavera",
+    )
+    assert isinstance(pregunta, Botones) and [o.id for o in pregunta.opciones] == ["si", "otra"]
+    assert respuestas[-1] == t.CONFIRMAR_UBICACION.format(nombre="La Primavera")
+    assert sistema.pulsar("otra") == [t.OTRA_UBICACION, pedido] and sistema.paso() == "FINCA_UBICACION"
+    sistema.ubicacion(5.2712, -73.1702)
+    respuestas = sistema.pulsar("si")
+    [finca] = sistema.consulta("SELECT * FROM fincas")
+    assert (finca["nombre_finca"], finca["vereda_sector_finca"], finca["id_productor"]) == (
+        "La Primavera",
+        "San Luis",
+        "PRO-000001",
+    )
+    assert (float(finca["latitud_finca"]), float(finca["longitud_finca"])) == (5.2712, -73.1702)
+    assert sistema.consulta("SELECT 1 FROM auditoria WHERE accion = 'REGISTRO_FINCA'")
+    assert respuestas[:3] == [
+        t.FINCA_CREADA.format(nombre="La Primavera"),
+        t.SIN_CULTIVOS.format(finca="La Primavera"),
+        t.PEDIR_NOMBRE_CULTIVO,
+    ]
+    assert sistema.paso() == "CULTIVO_NOMBRE"
+
+
+def test_una_finca_nueva_se_registra_aunque_ya_tenga_otras(sistema: Sistema) -> None:
+    productor_con_finca(sistema.motor)
+    sistema.escribir("hola")
+    assert sistema.pulsar("nueva") == [t.PEDIR_NOMBRE_FINCA]
+    sistema.escribir("Finca Dos")
+    veredas = sistema.ultimo_interactivo()
+    assert isinstance(veredas, Lista) and [o.id for o in veredas.opciones] == ["1", "otra"]
+    assert sistema.pulsar("otra") == [t.ESCRIBE_VEREDA] and sistema.paso() == "FINCA_VEREDA"
+    sistema.escribir("CENTRO")  # la misma vereda escrita de otra forma: se usa la guardada
+    sistema.ubicacion()
+    sistema.pulsar("si")
+    assert sistema.consulta("SELECT vereda_sector_finca AS v FROM fincas WHERE nombre_finca = 'Finca Dos'") == [
+        {"v": "Centro"}
+    ]
+
+
+def test_la_ubicacion_debe_estar_en_colombia(sistema: Sistema) -> None:
+    productor_con_finca(sistema.motor, fincas=0)
+    for texto in ("hola", "La Primavera", "Centro"):
+        sistema.escribir(texto)
+    pedido = t.PEDIR_UBICACION_FINCA.format(finca="La Primavera")
+    assert sistema.ubicacion(40.4168, -3.7038) == [t.UBICACION_FUERA_DE_COLOMBIA, pedido]
+    assert sistema.paso() == "FINCA_UBICACION"
+
+
+def test_una_ubicacion_fuera_de_zetaquira_se_avisa_pero_se_puede_aceptar(sistema: Sistema) -> None:
+    productor_con_finca(sistema.motor, fincas=0)
+    for texto in ("hola", "La Primavera", "Centro"):
+        sistema.escribir(texto)
+    pregunta = sistema.ubicacion(4.6097, -74.0817)[-1]
+    assert pregunta.startswith(t.AVISO_FUERA_DE_ZETAQUIRA)
+    assert sistema.escribir("¿cómo así?")[-1] == t.SI_O_NO and sistema.paso() == "FINCA_CONFIRMAR_UBICACION"
+    sistema.escribir("sí")
+    assert len(sistema.consulta("SELECT 1 FROM fincas")) == 1
+
+
+# --- lote: elegir o registrar ---------------------------------------------------------------------------------------
+
+
+def test_varios_lotes_y_varias_especies(sistema: Sistema) -> None:
     productor_con_finca(sistema.motor, cultivos=(("Lote 1", ("Gulupa",)), ("Lote 2", ("Gulupa", "Maracuyá"))))
-    assert "2. Lote 2" in junto(sistema.escribir("hola")) and sistema.paso() == "ELEGIR_CULTIVO"
-    respuestas = sistema.escribir("2")
-    assert "Gulupa" in junto(respuestas) and "Maracuyá" in junto(respuestas) and sistema.paso() == "ELEGIR_ESPECIE"
+    sistema.escribir("hola")
+    sistema.pulsar("1")
+    assert [o.titulo for o in sistema.ultimo_interactivo().opciones][:2] == ["Lote 1", "Lote 2"]
+    assert sistema.paso() == "ELEGIR_CULTIVO"
+    assert sistema.pulsar("2") == [t.ELEGIR_ESPECIE] and sistema.paso() == "ELEGIR_ESPECIE"
+    assert [o.titulo for o in sistema.ultimo_interactivo().opciones] == ["Gulupa", "Maracuyá"]
     assert sistema.escribir("9")[0].startswith("No te entendí")
     assert sistema.escribir("Maracuyá") == [t.PEDIR_AFECTACION]
     assert sistema.store.obtener(TELEFONO).contexto["especie"] == "MARACUYA"  # type: ignore[union-attr]
 
 
-def test_una_finca_sin_cultivos_se_registra_desde_whatsapp(sistema: Sistema) -> None:
+def test_un_lote_se_registra_con_la_ubicacion_tomada_dentro_de_el(sistema: Sistema) -> None:
     productor_con_finca(sistema.motor, cultivos=())
-    assert sistema.escribir("hola")[-1] == t.SIN_CULTIVOS and sistema.paso() == "CULTIVO_NOMBRE"
+    sistema.escribir("hola")
+    assert sistema.pulsar("1")[-2:] == [t.SIN_CULTIVOS.format(finca="La Esperanza"), t.PEDIR_NOMBRE_CULTIVO]
+    assert sistema.paso() == "CULTIVO_NOMBRE"
     assert sistema.escribir("Lote Norte") == [t.PEDIR_TIPO_CULTIVO]
     assert sistema.escribir("a ver")[0].startswith("No te entendí")
-    sistema.escribir("1")
-    assert sistema.escribir("ninguna") == [t.ESPECIES_INVALIDAS] and sistema.paso() == "CULTIVO_ESPECIES"
-    respuestas = sistema.escribir("1, 3")
+    sistema.pulsar("1")
+    especies = sistema.ultimo_interactivo()
+    assert isinstance(especies, Lista) and len(especies.opciones) == 7  # cada combinación de las tres especies
+    assert ("1,3", "Gulupa y maracuyá") in [(o.id, o.titulo) for o in especies.opciones]
+    assert sistema.escribir("ninguna")[0] == t.ESPECIES_INVALIDAS and sistema.paso() == "CULTIVO_ESPECIES"
+    pedido = t.PEDIR_UBICACION_LOTE.format(lote="Lote Norte")
+    assert sistema.pulsar("1,3") == [pedido] and sistema.paso() == "CULTIVO_UBICACION"
+    assert "dentro del lote" in pedido
+    sistema.ubicacion(5.2501, -73.1701)
+    respuestas = sistema.pulsar("si")
     [cultivo] = sistema.consulta("SELECT * FROM cultivos")
     assert (cultivo["nombre_cultivo"], cultivo["tipo_cultivo"], cultivo["id_finca"]) == (
         "Lote Norte",
         "INVERNADERO",
         "FIN-000001",
     )
-    assert (float(cultivo["latitud_cultivo"]), float(cultivo["longitud_cultivo"])) == (
-        5.25,
-        -73.17,
-    )  # la ubicación de su finca
-    especies = sistema.consulta(
+    assert (float(cultivo["latitud_cultivo"]), float(cultivo["longitud_cultivo"])) == (5.2501, -73.1701)
+    especies_guardadas = sistema.consulta(
         "SELECT es.nombre_especie AS n FROM cultivo_especie ce JOIN especies es USING (id_especie) ORDER BY 1"
     )
-    assert [e["n"] for e in especies] == ["Gulupa", "Maracuyá"]
+    assert [e["n"] for e in especies_guardadas] == ["Gulupa", "Maracuyá"]
+    assert sistema.consulta("SELECT 1 FROM auditoria WHERE accion = 'REGISTRO_CULTIVO'")
     assert t.CULTIVO_CREADO.format(nombre="Lote Norte") in respuestas and sistema.paso() == "ELEGIR_ESPECIE"
+
+
+def test_un_lote_lejos_de_su_finca_se_avisa(sistema: Sistema) -> None:
+    productor_con_finca(sistema.motor, cultivos=())
+    sistema.escribir("hola")
+    sistema.pulsar("1")
+    sistema.escribir("Lote Lejano")
+    sistema.pulsar("2")
+    sistema.pulsar("1")
+    pregunta = sistema.ubicacion(5.35, -73.17)[-1]  # la finca está en 5,25: unos 11 km
+    assert pregunta.startswith("Ojo: ese punto está a 11,1 km de la finca")
 
 
 def test_un_nombre_de_cultivo_vacio_o_demasiado_largo_se_rechaza(sistema: Sistema) -> None:
     productor_con_finca(sistema.motor, cultivos=())
     sistema.escribir("hola")
+    sistema.pulsar("1")
     for malo in ("   ", "x" * 101):
         assert sistema.escribir(malo) == [t.NOMBRE_CULTIVO_INVALIDO] and sistema.paso() == "CULTIVO_NOMBRE"
     assert sistema.consulta("SELECT 1 FROM cultivos") == []
+
+
+def test_si_meta_rechaza_el_interactivo_se_envia_como_texto_con_las_opciones(sistema: Sistema) -> None:
+    productor_con_finca(sistema.motor)
+    sistema.whatsapp.enviar_interactivo = lambda telefono, mensaje: ResultadoEnvio(FALLIDO, error="131000")  # type: ignore[method-assign]
+    respuestas = sistema.escribir("hola")
+    assert respuestas[-1] == f"{t.ELEGIR_FINCA}\n1. La Esperanza\n2. {t.FILA_FINCA_NUEVA}"
 
 
 def test_la_afectacion_total_no_se_asume_y_abre_el_caso(sistema: Sistema) -> None:
@@ -335,8 +463,7 @@ def test_el_resumen_y_la_confirmacion(sistema: Sistema) -> None:
 
 def test_recorrido_completo_hasta_pendiente_de_revision(sistema: Sistema) -> None:
     programar(sistema, Turno(pregunta=PREGUNTA_1), Turno(pregunta=PREGUNTA_2), Turno(completo=True))
-    productor_con_finca(sistema.motor)
-    sistema.escribir("hola")
+    hasta_afectacion(sistema)
     sistema.escribir("2")
     sistema.escribir("esquina de abajo")
     sistema.escribir("hace una semana")
@@ -373,8 +500,8 @@ def test_el_caso_nuevo_avisa_a_los_lideres_activos_en_la_campana(sistema: Sistem
         sesion.commit()
         activo, deshabilitado = (x.id_lider_tecnico for x in lideres)
     programar(sistema, Turno(completo=True))
-    productor_con_finca(sistema.motor)
-    for texto in ("hola", "2", "esquina de abajo", "hace una semana", "sí"):
+    hasta_afectacion(sistema)
+    for texto in ("2", "esquina de abajo", "hace una semana", "sí"):
         sistema.escribir(texto)
     sistema.foto("m1", "fruto")
     sistema.escribir("listo")
@@ -425,9 +552,33 @@ def test_si_hay_identificacion_se_guarda_y_se_cuenta_al_productor(sistema: Siste
 # --- /salir -----------------------------------------------------------------------------------------------------------------
 
 
-def test_salir_sin_consulta_abierta(sistema: Sistema) -> None:
+def test_salir_sin_consulta_abierta_empieza_de_nuevo(sistema: Sistema) -> None:
     productor_con_finca(sistema.motor)
-    assert sistema.escribir("/salir") == [t.NO_HAY_CONSULTA]
+    assert sistema.escribir("/salir") == [t.REINICIADO, t.SALUDO_CON_NOMBRE.format(nombre="Ana"), t.ELEGIR_FINCA]
+    assert sistema.paso() == "ELEGIR_FINCA"
+
+
+@pytest.mark.parametrize("orden", ["REINICIAR", "/reiniciar", "Cancelar", "empezar de nuevo"])
+def test_reiniciar_a_mitad_del_registro_de_una_finca(sistema: Sistema, orden: str) -> None:
+    productor_con_finca(sistema.motor, fincas=0)
+    for texto in ("hola", "La Primavera", "Centro"):
+        sistema.escribir(texto)
+    assert sistema.paso() == "FINCA_UBICACION"
+    respuestas = sistema.escribir(orden)
+    assert respuestas[0] == t.REINICIADO and respuestas[-1] == t.PEDIR_NOMBRE_FINCA
+    assert sistema.paso() == "FINCA_NOMBRE"
+    assert sistema.store.obtener(TELEFONO).contexto.get("nueva_finca") == {}  # type: ignore[union-attr]
+    assert sistema.consulta("SELECT 1 FROM fincas") == []  # lo que iba a medias no se guardó
+
+
+def test_reiniciar_antes_de_aceptar_vuelve_al_aviso_de_privacidad(sistema: Sistema) -> None:
+    sistema.escribir("hola")
+    assert sistema.escribir("reiniciar") == [t.REINICIADO, t.SALUDO, t.CONSENTIMIENTO]
+    assert sistema.paso() == "CONSENTIMIENTO"
+
+
+def test_el_saludo_explica_como_empezar_de_nuevo(sistema: Sistema) -> None:
+    assert "REINICIAR" in sistema.escribir("hola")[0]
 
 
 def test_salir_pide_confirmacion_y_se_puede_cancelar(sistema: Sistema) -> None:
@@ -483,7 +634,7 @@ def test_abandonar_descarta_la_anterior_y_empieza_otra(sistema: Sistema) -> None
     respuestas = sistema.escribir("sí")
     assert t.ABANDONO_HECHO in respuestas and sistema.consulta("SELECT 1 FROM casos") == []
     assert sistema.consulta("SELECT 1 FROM auditoria WHERE accion = 'BORRAR_ABANDONO'")
-    assert sistema.paso() == "AFECTACION"
+    assert sistema.paso() == "ELEGIR_FINCA"
 
 
 def test_no_abandonar_continua_la_consulta_con_la_ia(sistema: Sistema) -> None:
@@ -524,7 +675,7 @@ def test_si_el_job_descarto_la_consulta_se_empieza_de_nuevo(sistema: Sistema) ->
             c.execute(sql(f"DELETE FROM {tabla}"))
         c.execute(sql("DELETE FROM casos"))
     respuestas = sistema.escribir("hace tres días")
-    assert respuestas[0] == t.CONSULTA_VENCIDA and sistema.paso() == "AFECTACION"
+    assert respuestas[0] == t.CONSULTA_VENCIDA and sistema.paso() == "ELEGIR_FINCA"
 
 
 # --- estado, efectos y duplicados ------------------------------------------------------------------------------------------------
@@ -552,7 +703,7 @@ def test_si_algo_falla_no_sale_ninguna_respuesta_ni_cambia_el_estado(sistema: Si
     assert len(sistema.whatsapp.enviados) == enviados and sistema.store.obtener(TELEFONO) == antes
     assert (
         sistema.consulta("SELECT 1 FROM respuestas") == []
-        and sistema.consulta("SELECT 1 FROM mensajes_whatsapp WHERE wamid = 'wamid.4'") == []
+        and sistema.consulta("SELECT 1 FROM mensajes_whatsapp WHERE wamid = 'wamid.5'") == []
     )
 
 
@@ -571,7 +722,7 @@ def test_otro_telefono_tiene_su_propia_conversacion(sistema: Sistema) -> None:
     productor_con_finca(sistema.motor)
     sistema.escribir("hola")
     assert sistema.escribir("hola", telefono="573009998877") == [t.SALUDO, t.CONSENTIMIENTO]
-    assert sistema.paso() == "AFECTACION" and sistema.paso("573009998877") == "CONSENTIMIENTO"
+    assert sistema.paso() == "ELEGIR_FINCA" and sistema.paso("573009998877") == "CONSENTIMIENTO"
 
 
 def test_un_estado_guardado_de_una_version_anterior_no_rompe(sistema: Sistema) -> None:
@@ -579,7 +730,7 @@ def test_un_estado_guardado_de_una_version_anterior_no_rompe(sistema: Sistema) -
 
     productor_con_finca(sistema.motor)
     sistema.store.guardar(Conversacion(TELEFONO, "PASO_QUE_YA_NO_EXISTE"))
-    assert sistema.escribir("hola")[-1] == t.PEDIR_AFECTACION
+    assert sistema.escribir("hola")[-1] == t.ELEGIR_FINCA
 
 
 def test_si_whatsapp_falla_al_responder_el_mensaje_ya_quedo_procesado(
@@ -588,5 +739,5 @@ def test_si_whatsapp_falla_al_responder_el_mensaje_ya_quedo_procesado(
     productor_con_finca(sistema.motor)
     sistema.whatsapp.fallan.add(TELEFONO)
     sistema.escribir("hola")
-    assert sistema.paso() == "AFECTACION"  # el estado sí avanzó: el mensaje se procesó
+    assert sistema.paso() == "ELEGIR_FINCA"  # el estado sí avanzó: el mensaje se procesó
     assert "No se pudo enviar la respuesta" in caplog.text and TELEFONO not in caplog.text
