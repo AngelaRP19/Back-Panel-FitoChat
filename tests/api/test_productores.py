@@ -141,8 +141,8 @@ def test_celular_repetido_409(api: TestClient, lider: Cuenta, migrated: Engine) 
     [
         ({"nombre": ""}, "nombre"),
         ({"nombre": "x" * 101}, "nombre"),
-        ({"celular": "+573109998877"}, "celular"),
-        ({"celular": "573109998877"}, "celular"),
+        ({"celular": "+583109998877"}, "celular"),
+        ({"celular": "31099988"}, "celular"),
         ({"celular": "1234567890"}, "celular"),
     ],
 )
@@ -503,12 +503,17 @@ def test_pagina_fuera_de_rango_informa_el_total(api: TestClient, lider: Cuenta, 
     assert listar(api, lider, page=9, page_size=5) == {"items": [], "total": 1, "page": 9, "page_size": 5}
 
 
+def test_admite_1000_filas_para_el_selector_de_los_reportes(api: TestClient, lider: Cuenta, catalogos: None) -> None:
+    crear_productor(api, lider)
+    assert listar(api, lider, page_size=1000)["page_size"] == 1000
+
+
 @pytest.mark.parametrize(
     "parametros",
     [
         {"page": 0},
         {"page_size": 0},
-        {"page_size": 101},
+        {"page_size": 1001},
         {"estado": "borrado"},
         {"con_casos": "algunos"},
         {"consulta": "15"},
