@@ -7,6 +7,7 @@ from typing import Any
 import boto3
 import jwt
 import pytest
+from botocore.exceptions import ClientError
 from moto import mock_aws
 
 from app.core.config import Settings
@@ -172,6 +173,26 @@ def test_real_si_la_contrasena_no_cumple_la_politica_no_deja_el_usuario_a_medias
     with pytest.raises(ContrasenaNoValida):
         cognito.crear_usuario(CORREO, "Luis", CELULAR, "sinnumeros")
     assert crudo.list_users(UserPoolId=pool)["Users"] == []  # se eliminó lo que alcanzó a crearse
+
+
+def test_real_si_no_se_puede_borrar_lo_creado_se_informa_la_contrasena_no_el_permiso(
+    real: tuple[CognitoReal, Any, str],
+) -> None:
+    """En producción faltaba AdminDeleteUser: el AccessDenied de la compensación tapaba la contraseña y salía 503."""
+    _, crudo, pool = real
+
+    class SinPermisoParaBorrar:
+        def __getattr__(self, nombre: str) -> Any:
+            if nombre == "admin_delete_user":
+
+                def denegar(**_: Any) -> None:
+                    raise ClientError({"Error": {"Code": "AccessDeniedException", "Message": "x"}}, nombre)
+
+                return denegar
+            return getattr(crudo, nombre)
+
+    with pytest.raises(ContrasenaNoValida):
+        CognitoReal(SinPermisoParaBorrar(), pool).crear_usuario(CORREO, "Luis", CELULAR, "sinnumeros")
 
 
 def test_real_correo_repetido(real: tuple[CognitoReal, Any, str]) -> None:

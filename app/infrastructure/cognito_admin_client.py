@@ -10,6 +10,7 @@ ingreso, que el frontend ya maneja) y el primer líder define la suya al crear l
 Ambos tienen la misma interfaz (`CognitoAdmin`). Las llamadas son síncronas: la capa de servicio las ejecuta en un hilo.
 """
 
+import logging
 import threading
 import uuid
 from dataclasses import dataclass
@@ -21,6 +22,8 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from app.core.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class ErrorCognito(Exception):
@@ -112,9 +115,11 @@ class CognitoReal:
                     Permanent=True,
                 )
             except ErrorCognito:
-                self._llamar(
-                    "admin_delete_user", UserPoolId=self._pool, Username=correo
-                )  # no dejar el usuario a medias
+                try:
+                    self._llamar("admin_delete_user", UserPoolId=self._pool, Username=correo)  # no dejarlo a medias
+                except ErrorCognito:
+                    # Se informa el error original (p. ej., contraseña que no cumple la política), no el de borrar.
+                    logger.exception("No se pudo borrar el usuario a medio crear en Cognito; revisarlo a mano")
                 raise
         sub = next(a["Value"] for a in respuesta["User"]["Attributes"] if a["Name"] == "sub")
         return str(sub)
