@@ -77,6 +77,26 @@ TITULOS_EVENTO = {
 }
 
 
+# Pasos que faltan según el estado: (tipo de evento, título, detalle).
+_ASIGNACION = ("TECNICO_ASIGNADO", "Técnico asignado", "Pendiente · el líder técnico asigna un técnico")
+_DIAGNOSTICO = ("DIAGNOSTICO_REGISTRADO", "Diagnóstico técnico", "Pendiente")
+_CIERRE = ("CASO_CERRADO", "Cierre del caso", "Pendiente · define la fecha de vencimiento de conservación")
+PASOS_PENDIENTES: dict[EstadoCaso, tuple[tuple[str, str, str], ...]] = {
+    EstadoCaso.CREADO: (_ASIGNACION, _DIAGNOSTICO, _CIERRE),
+    EstadoCaso.EN_ANALISIS: (_ASIGNACION, _DIAGNOSTICO, _CIERRE),
+    EstadoCaso.PENDIENTE_REVISION: (_ASIGNACION, _DIAGNOSTICO, _CIERRE),
+    EstadoCaso.EN_REVISION: (_DIAGNOSTICO, _CIERRE),
+    EstadoCaso.REGISTRADO: (_CIERRE,),
+}
+
+
+def _pasos_pendientes(estado: EstadoCaso) -> list[EventoOut]:
+    return [
+        EventoOut(tipo=tipo, titulo=titulo, en=None, detalle=detalle, responsable=None, pendiente=True)
+        for tipo, titulo, detalle in PASOS_PENDIENTES.get(estado, ())
+    ]
+
+
 def alcance_de(actor: UsuarioActual) -> Alcance:
     return Alcance(id_usuario=actor.id, es_lider=actor.rol is Rol.LIDER_TECNICO)
 
@@ -285,9 +305,13 @@ class CasosService:
         )
 
     async def historial(self, actor: UsuarioActual, id_caso: str) -> list[EventoOut]:
-        """El técnico solo ve el historial de los casos que tiene asignados; el líder, el de todos (guía §2)."""
-        await self._fila_o_404(actor, id_caso)
-        return [
+        """El técnico solo ve el historial de los casos que tiene asignados; el líder, el de todos (guía §2).
+
+        Al final van los pasos que faltan (asignación, diagnóstico, cierre) con `pendiente=true`, como los muestra
+        la línea de tiempo del panel. Los estados finales (Cerrado, Descartado) no tienen pasos pendientes.
+        """
+        fila = await self._fila_o_404(actor, id_caso)
+        ocurridos = [
             EventoOut(
                 tipo=e.tipo,
                 titulo=TITULOS_EVENTO.get(e.tipo, e.tipo.replace("_", " ").capitalize()),
@@ -297,6 +321,7 @@ class CasosService:
             )
             for e in await repo.eventos(self.session, id_caso)
         ]
+        return ocurridos + _pasos_pendientes(_estado(fila))
 
     async def explicacion(self, actor: UsuarioActual, id_caso: str) -> ExplicacionOut:
         fila = await self._fila_o_404(actor, id_caso)

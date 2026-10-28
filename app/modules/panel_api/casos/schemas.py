@@ -163,6 +163,9 @@ class CasoDetalle(BaseModel):
     preliminar: Preliminar | None
     preliminar_porcentajes: list[PorcentajeCategoria] = Field(description="Porcentaje de coincidencia por categoría")
     preliminar_resumen: str | None
+    preliminar_pista: str | None = Field(
+        default=None, description="Pista para el técnico (cómo verificar). Hoy la IA no la genera: siempre nulo"
+    )
     preliminar_coincidencias: list[CoincidenciaTexto] = Field(description="Resultado ambiguo: en qué coincide cada una")
     tecnico: PersonaRef | None
     enviado_a_panel_en: datetime | None
@@ -212,9 +215,10 @@ class ResponsableEvento(BaseModel):
 class EventoOut(BaseModel):
     tipo: TipoEvento | str
     titulo: str
-    en: datetime
+    en: datetime | None = Field(description="Nulo en los pasos que todavía no ocurren (`pendiente`)")
     detalle: str
     responsable: ResponsableEvento | None
+    pendiente: bool = Field(default=False, description="Paso futuro del ciclo del caso (la línea de tiempo del panel)")
 
 
 class DescartaOut(BaseModel):

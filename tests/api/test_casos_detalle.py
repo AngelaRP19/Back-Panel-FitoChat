@@ -401,7 +401,8 @@ def test_el_historial_anota_quien_hizo_cada_paso(api: TestClient, mundo: Mundo, 
     id_caso = crear_caso(migrated, mundo.cultivo1, "GULUPA", "Pendiente de revisión", enviado_hace=timedelta(days=1))
     api.patch(f"{URL}/{id_caso}/asignacion", json={"tecnico_id": mundo.t1.id}, headers=mundo.lider.headers)
     api.patch(f"{URL}/{id_caso}/asignacion", json={"tecnico_id": mundo.t2.id}, headers=mundo.lider.headers)
-    historial = pedir(api, mundo.lider, f"{URL}/{id_caso}/historial")
+    completo = pedir(api, mundo.lider, f"{URL}/{id_caso}/historial")
+    historial = [e for e in completo if not e["pendiente"]]
     por_tipo = {e["tipo"]: e for e in historial}
     assert set(por_tipo) == {"CASO_CREADO", "TECNICO_ASIGNADO", "TECNICO_REASIGNADO"}
     asignado = por_tipo["TECNICO_ASIGNADO"]
@@ -410,7 +411,29 @@ def test_el_historial_anota_quien_hizo_cada_paso(api: TestClient, mundo: Mundo, 
     assert por_tipo["TECNICO_REASIGNADO"]["responsable"]["nombre"] == "Laura Líder"
     asignaciones = [e["tipo"] for e in historial if e["tipo"].startswith("TECNICO")]
     assert asignaciones == ["TECNICO_ASIGNADO", "TECNICO_REASIGNADO"]  # en orden
-    assert set(asignado) == {"tipo", "titulo", "en", "detalle", "responsable"}
+    assert set(asignado) == {"tipo", "titulo", "en", "detalle", "responsable", "pendiente"}
+
+
+@pytest.mark.parametrize(
+    ("estado", "pendientes"),
+    [
+        ("Pendiente de revisión", ["TECNICO_ASIGNADO", "DIAGNOSTICO_REGISTRADO", "CASO_CERRADO"]),
+        ("En revisión", ["DIAGNOSTICO_REGISTRADO", "CASO_CERRADO"]),
+        ("Registrado", ["CASO_CERRADO"]),
+        ("Cerrado", []),
+        ("Descartado", []),
+    ],
+)
+def test_el_historial_termina_con_los_pasos_que_faltan(
+    api: TestClient, mundo: Mundo, migrated: Engine, estado: str, pendientes: list[str]
+) -> None:
+    """La línea de tiempo del panel muestra los pasos futuros como «Pendiente», sin fecha."""
+    id_caso = crear_caso(migrated, mundo.cultivo1, "GULUPA", estado, enviado_hace=timedelta(days=1))
+    historial = pedir(api, mundo.lider, f"{URL}/{id_caso}/historial")
+    futuros = [e for e in historial if e["pendiente"]]
+    assert [e["tipo"] for e in futuros] == pendientes
+    assert all(e["en"] is None and e["responsable"] is None for e in futuros)
+    assert historial[: len(historial) - len(futuros)] == [e for e in historial if not e["pendiente"]]  # al final
 
 
 def test_el_historial_del_caso_nuevo_tiene_su_creacion(api: TestClient, mundo: Mundo, caso: str) -> None:
