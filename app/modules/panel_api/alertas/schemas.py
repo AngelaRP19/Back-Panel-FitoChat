@@ -139,6 +139,10 @@ class Descarte(BaseModel):
 
 class Borrador(BaseModel):
     mensaje: str
+    veredas: list[str] = Field(
+        description="Veredas elegidas. Hoy no se guardan: se devuelve la vereda de la alerta (pendiente de modelo)"
+    )
+    guardado_en: datetime | None = Field(description="Hoy no se guarda la fecha del borrador (pendiente de modelo)")
 
 
 class Correccion(BaseModel):
@@ -149,6 +153,9 @@ class Correccion(BaseModel):
 
 class AlertaDetalle(AlertaResumen):
     casos: list[CasoAlerta]
+    sin_diagnostico: list[str] = Field(
+        description="Códigos (#0230) de casos de la misma categoría en la zona aún sin diagnóstico: no cuentan"
+    )
     confirmada_en: datetime | None
     comunicada_en: date | None
     descarte: Descarte | None

@@ -12,7 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.paginacion import ParametrosPagina
-from app.core.catalogos_api import CATEGORIAS
+from app.core.catalogos_api import CATEGORIAS, ESTADOS_CASO, EstadoCaso
 
 ENVIADO = "ENVIADO"
 SIMULADO = "SIMULADO"
@@ -168,6 +168,42 @@ async def casos(session: AsyncSession, id_alerta: str) -> list[CasoAlertaFila]:
         {"a": id_alerta},
     )
     return [CasoAlertaFila(**dict(r)) for r in resultado.mappings()]
+
+
+async def sin_diagnostico(session: AsyncSession, id_alerta: str, km: Decimal) -> list[str]:
+    """Casos de la misma categoría preliminar, a `km` o menos de las fincas de la alerta, que siguen sin
+    diagnóstico técnico (Pendiente de revisión o En revisión). Se muestran aparte porque todavía no cuentan."""
+    resultado = await session.execute(
+        text(
+            """
+            WITH origen AS (
+                SELECT DISTINCT f.ubicacion
+                FROM alerta_casos ac
+                JOIN casos c ON c.id_caso = ac.id_caso
+                JOIN cultivos cu ON cu.id_cultivo = c.id_cultivo
+                JOIN fincas f ON f.id_finca = cu.id_finca
+                WHERE ac.id_alerta = :a
+            )
+            SELECT v.id_caso
+            FROM vw_casos_detalle v
+            JOIN fincas f ON f.id_finca = v.id_finca
+            JOIN alertas al ON al.id_alerta = :a
+            JOIN categorias_fitosanitarias cf ON cf.id_categoria = al.id_categoria
+            WHERE v.nombre_categoria_principal = cf.nombre_categoria
+              AND v.nombre_estado IN (:pendiente, :revision)
+              AND v.id_caso NOT IN (SELECT id_caso FROM alerta_casos WHERE id_alerta = :a)
+              AND EXISTS (SELECT 1 FROM origen o WHERE fn_distancia_km(o.ubicacion, f.ubicacion) <= :km)
+            ORDER BY v.id_caso
+            """
+        ),
+        {
+            "a": id_alerta,
+            "km": float(km),
+            "pendiente": ESTADOS_CASO.a_nombre(EstadoCaso.PENDIENTE_REVISION),
+            "revision": ESTADOS_CASO.a_nombre(EstadoCaso.EN_REVISION),
+        },
+    )
+    return [str(r) for (r,) in resultado]
 
 
 # --- Destinatarios -------------------------------------------------------------------------------------------------

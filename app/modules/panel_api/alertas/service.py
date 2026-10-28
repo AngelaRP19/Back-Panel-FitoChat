@@ -151,15 +151,22 @@ class AlertasService:
             )
         estado = resumen.estado
         decision = _persona(f.id_lider_gestion, f.nombre_lider_gestion)
+        pendientes = await repo.sin_diagnostico(self.session, id_alerta, f.distancia_km)
         return AlertaDetalle(
             **resumen.model_dump(),
             casos=casos,
+            sin_diagnostico=[codigo_caso(c) for c in pendientes],
             confirmada_en=f.fecha_confirmacion if estado is not E.DESCARTADA else None,
             comunicada_en=f.comunicada_el,
             descarte=Descarte(motivo=f.justificacion_descarte or "", por=decision, en=f.fecha_confirmacion)
             if estado is E.DESCARTADA
             else None,
-            borrador=Borrador(mensaje=f.recomendacion) if estado is E.CONFIRMADA and f.recomendacion else None,
+            # Las veredas y la fecha del borrador no se guardan (pendiente de modelo): se propone la de la alerta.
+            borrador=Borrador(
+                mensaje=f.recomendacion, veredas=[resumen.vereda] if resumen.vereda else [], guardado_en=None
+            )
+            if estado is E.CONFIRMADA and f.recomendacion
+            else None,
             mensaje_enviado=f.mensaje_enviado,
             correccion=Correccion(
                 mensaje=f.mensaje_correccion,

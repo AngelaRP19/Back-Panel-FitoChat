@@ -161,7 +161,20 @@ def test_el_detalle_trae_los_casos_que_la_originan(api: TestClient, mundo: Mundo
     assert (primero["latitud"], primero["longitud"]) == (5.25, -73.17)
     assert all(c["enlazable"] for c in d["casos"]) and all(c["resultado_tecnico"] == "CONFIRMADO" for c in d["casos"])
     assert d["borrador"] is None and d["descarte"] is None and d["correccion"] is None and d["mensaje_enviado"] is None
-    assert d["siguiendo"] is False
+    assert d["siguiendo"] is False and d["sin_diagnostico"] == []
+
+
+def test_lista_los_casos_de_la_zona_que_aun_no_tienen_diagnostico(
+    api: TestClient, mundo: Mundo, migrated: Engine, zona: Zona
+) -> None:
+    """Misma categoría preliminar, dentro del radio y sin diagnóstico: se muestran aparte y no cuentan."""
+    pendiente = crear_caso(migrated, mundo.cultivo1, "GULUPA", "Pendiente de revisión")
+    crear_identificacion(migrated, pendiente, porcentajes={"TRIPS": 80})
+    otra_categoria = crear_caso(migrated, mundo.cultivo1, "GULUPA", "Pendiente de revisión")
+    crear_identificacion(migrated, otra_categoria, porcentajes={"BOTRYTIS": 80})
+    d = pedir(api, mundo.lider, f"{URL}/{zona.alerta}")
+    numero = int(pendiente.rsplit("-", 1)[-1])
+    assert d["sin_diagnostico"] == [f"#{numero:04d}"]
 
 
 def test_el_tecnico_solo_puede_abrir_sus_casos_y_no_ve_los_productores_ajenos(
@@ -304,10 +317,12 @@ def test_con_el_minimo_original_dos_casos_no_generan_alerta(
 
 def test_el_tecnico_sigue_y_deja_de_seguir(api: TestClient, mundo: Mundo, migrated: Engine, zona: Zona) -> None:
     ruta = f"{URL}/{zona.alerta}/seguir"
-    assert api.post(ruta, headers=mundo.t1.headers).json() == {"siguiendo": True}
+    seguida = api.post(ruta, headers=mundo.t1.headers).json()
+    # El panel espera la alerta completa (contrato del frontend), no solo la bandera.
+    assert seguida["id"] == zona.alerta and seguida["siguiendo"] is True and "casos" in seguida
     assert pedir(api, mundo.t1, f"{URL}/{zona.alerta}")["siguiendo"] is True
     assert pedir(api, mundo.t2, f"{URL}/{zona.alerta}")["siguiendo"] is False  # cada técnico, lo suyo
-    assert api.delete(ruta, headers=mundo.t1.headers).json() == {"siguiendo": False}
+    assert api.delete(ruta, headers=mundo.t1.headers).json()["siguiendo"] is False
     assert pedir(api, mundo.t1, f"{URL}/{zona.alerta}")["siguiendo"] is False
 
 
