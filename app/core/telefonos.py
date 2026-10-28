@@ -10,6 +10,18 @@ def es_celular_valido(celular: str) -> bool:
     return PATRON_CELULAR.fullmatch(celular) is not None
 
 
+def normalizar_celular(texto: str) -> str:
+    """Lo que escribe o envía el panel → 10 dígitos: quita espacios, guiones y el indicativo +57 / 57.
+
+    El panel envía E.164 (`+573001234567`); la API responde con 10 dígitos. Si el resultado no es un
+    celular válido se devuelve igual, para que la validación diga el error.
+    """
+    digitos = re.sub(r"[\s\-()+]", "", texto)
+    if len(digitos) == 12 and digitos.startswith(_INDICATIVO) and digitos.isdigit():
+        return digitos[2:]
+    return digitos
+
+
 def celular_a_e164(celular: str) -> str:
     """'3001234567' -> '573001234567'."""
     if not es_celular_valido(celular):

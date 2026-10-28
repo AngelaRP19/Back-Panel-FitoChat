@@ -33,6 +33,10 @@ async def listar_cuentas(
     q: Annotated[str | None, Query(max_length=100, description="Nombre o correo, sin importar tildes")] = None,
     rol: Rol | None = None,
     activo: bool | None = None,
+    estado: Annotated[
+        Literal["activa", "deshabilitada"] | None,
+        Query(description="Filtro del panel: equivale a activo=true / activo=false"),
+    ] = None,
     carga: Annotated[
         Literal["pendientes", "sin"] | None, Query(description="Con casos En revisión, o sin casos")
     ] = None,
@@ -41,6 +45,8 @@ async def listar_cuentas(
     """Líderes y técnicos juntos (los líderes primero). Con `con_carga=true`, solo los técnicos activos y su carga."""
     if con_carga:
         return [a_carga_out(c) for c in await servicio.tecnicos_con_carga()]
+    if estado is not None and activo is None:
+        activo = estado == "activa"
     filas, total = await servicio.listar(pagina, q=q, rol=rol, activo=activo, carga=carga)
     return Pagina[CuentaOut](
         items=[a_cuenta_out(f) for f in filas], total=total, page=pagina.page, page_size=pagina.page_size
@@ -68,5 +74,5 @@ async def editar_cuenta(id_cuenta: str, datos: CuentaEditar, actor: SoloLider, s
 async def cambiar_estado_de_cuenta(
     id_cuenta: str, datos: CambiarEstadoIn, actor: SoloLider, servicio: ServicioCuentas
 ) -> CuentaOut:
-    """Habilita o deshabilita. `409 ULTIMA_CUENTA_ACTIVA` si es la única cuenta activa de su rol (RQF12, RQF13)."""
+    """Habilita o deshabilita. `409 UNICA_CUENTA_ACTIVA` si es la única cuenta activa de su rol (RQF12, RQF13)."""
     return a_cuenta_out(await servicio.cambiar_estado(id_cuenta, datos.activo, actor))

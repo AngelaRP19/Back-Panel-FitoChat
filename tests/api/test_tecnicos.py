@@ -122,6 +122,20 @@ def test_filtra_por_estado(api: TestClient, nueva_cuenta: NuevaCuenta, lider: Cu
     assert nombres("true") == {"Tecnico 1"} and nombres("false") == {"Tecnico 2"}
 
 
+def test_filtra_por_estado_con_el_parametro_del_panel(
+    api: TestClient, nueva_cuenta: NuevaCuenta, lider: Cuenta
+) -> None:
+    """El panel envía `estado=activa|deshabilitada` (contrato del frontend)."""
+    nueva_cuenta(Rol.TECNICO, 1)
+    nueva_cuenta(Rol.TECNICO, 2, activo=False)
+
+    def nombres(estado: str) -> set[str]:
+        r = api.get(URL, params={"estado": estado, "rol": "TECNICO"}, headers=lider.headers)
+        return {c["nombre"] for c in r.json()["items"]}
+
+    assert nombres("activa") == {"Tecnico 1"} and nombres("deshabilitada") == {"Tecnico 2"}
+
+
 def test_busca_por_nombre_o_correo_sin_importar_tildes_ni_mayusculas(
     api: TestClient, nueva_cuenta: NuevaCuenta, lider: Cuenta
 ) -> None:
@@ -338,7 +352,7 @@ def test_la_cuenta_de_tecnico_del_lider_puede_usar_su_celular(api: TestClient, l
     [
         ({"nombre": ""}, "nombre"),
         ({"correo": "malo"}, "correo"),
-        ({"celular": "573109998877"}, "celular"),
+        ({"celular": "2109998877"}, "celular"),
         ({"rol": "ADMIN"}, "rol"),
     ],
 )
@@ -348,6 +362,11 @@ def test_datos_invalidos_422(
     r = api.post(URL, json={**NUEVO, **cambio}, headers=lider.headers)
     assert r.status_code == 422 and campo in r.json()["campos"]
     assert not cognito.existe("beto@anuc.org")
+
+
+def test_acepta_el_celular_en_e164_como_lo_envia_el_panel(api: TestClient, lider: Cuenta) -> None:
+    r = api.post(URL, json={**NUEVO, "celular": "+573109998877"}, headers=lider.headers)
+    assert r.status_code == 201 and r.json()["celular"] == "3109998877"
 
 
 def test_faltan_campos(api: TestClient, lider: Cuenta) -> None:
@@ -597,14 +616,14 @@ def test_la_unica_cuenta_activa_de_un_rol_no_se_puede_deshabilitar(
 ) -> None:
     ana = nueva_cuenta(Rol.TECNICO)
     r = estado(api, lider, ana.id, False)
-    assert r.status_code == 409 and r.json()["codigo"] == "ULTIMA_CUENTA_ACTIVA"
+    assert r.status_code == 409 and r.json()["codigo"] == "UNICA_CUENTA_ACTIVA"
     assert cognito.obtener(ana.correo).habilitado and auditoria_de(migrated) == []
     assert consultar(migrated, "SELECT estado_cuenta_tecnico FROM tecnicos")[0]["estado_cuenta_tecnico"] == "ACTIVO"
 
 
 def test_ni_el_unico_lider_se_puede_deshabilitar_a_si_mismo(api: TestClient, lider: Cuenta) -> None:
     r = estado(api, lider, lider.id, False)
-    assert r.status_code == 409 and r.json()["codigo"] == "ULTIMA_CUENTA_ACTIVA"
+    assert r.status_code == 409 and r.json()["codigo"] == "UNICA_CUENTA_ACTIVA"
 
 
 def test_con_dos_lideres_uno_se_puede_deshabilitar(api: TestClient, lider: Cuenta, nueva_cuenta: NuevaCuenta) -> None:
@@ -707,7 +726,7 @@ def test_dos_deshabilitaciones_simultaneas_no_dejan_el_rol_sin_cuentas(
 
     respuestas = asyncio.run(disparar())
     assert sorted(r.status_code for r in respuestas) == [200, 409]
-    assert [r.json()["codigo"] for r in respuestas if r.status_code == 409] == ["ULTIMA_CUENTA_ACTIVA"]
+    assert [r.json()["codigo"] for r in respuestas if r.status_code == 409] == ["UNICA_CUENTA_ACTIVA"]
     activas = consultar(migrated, "SELECT count(*) AS n FROM tecnicos WHERE estado_cuenta_tecnico = 'ACTIVO'")
     assert activas[0]["n"] == 1
 

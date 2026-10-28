@@ -4,7 +4,7 @@ from typing import Annotated
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
 
 from app.core.roles import Rol
-from app.core.telefonos import PATRON_CELULAR
+from app.core.telefonos import PATRON_CELULAR, normalizar_celular
 
 _CORREO = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -26,6 +26,7 @@ def _correo(valor: str) -> str:
 
 
 def _celular(valor: str) -> str:
+    valor = normalizar_celular(valor)  # el panel envía E.164 (+573001234567)
     if not PATRON_CELULAR.fullmatch(valor):
         raise ValueError("Escribe un celular de 10 dígitos que empiece por 3")
     return valor
