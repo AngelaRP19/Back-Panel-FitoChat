@@ -10,6 +10,7 @@ from app.core.catalogos_api import EstadoAlerta
 Periodo = Literal["7d", "30d", "mes", "anio", "personalizado"]
 Comunicada = Literal["si", "sin_comunicar"]
 PERIODO_PREDETERMINADO: Periodo = "anio"
+MAXIMO_DIAS = 366  # 12 meses, como el panel
 
 
 @dataclass(frozen=True)
@@ -56,4 +57,6 @@ def rango_del_periodo(f: FiltrosAlertas, hoy: date) -> tuple[date, date, Periodo
         raise ApiError(
             422, "VALIDACION", "La fecha inicial no puede ser posterior a la final.", {"desde": "Posterior a «hasta»"}
         )
+    if (hasta - desde).days > MAXIMO_DIAS:
+        raise ApiError(422, "VALIDACION", "El rango máximo es de 12 meses.", {"hasta": "Máximo 12 meses."})
     return desde, hasta, periodo

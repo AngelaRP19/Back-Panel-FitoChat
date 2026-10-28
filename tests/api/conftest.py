@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.core.roles import Rol
 from app.core.telefonos import celular_a_e164
 from app.infrastructure.cognito_admin_client import CognitoSimulado, get_cognito_admin
+from app.infrastructure.consultas_store import _EN_MEMORIA as CONSULTAS_EN_MEMORIA
 from app.infrastructure.db.models import LiderTecnico, Tecnico
 from app.infrastructure.db.session import get_session
 from app.infrastructure.notificaciones_store import _EN_MEMORIA as NOTIFICACIONES_EN_MEMORIA
@@ -62,6 +63,7 @@ def cognito() -> CognitoSimulado:
 def api(migrated: Engine, cognito: CognitoSimulado) -> Iterator[TestClient]:
     vaciar(migrated)
     NOTIFICACIONES_EN_MEMORIA.vaciar()  # las cuentas se recrean con los mismos ids en cada prueba
+    CONSULTAS_EN_MEMORIA.vaciar()
     app.dependency_overrides[get_session] = _sesion_por_solicitud
     app.dependency_overrides[get_cognito_admin] = lambda: cognito
     LIMITADOR_VERIFICAR_CORREO.reiniciar()

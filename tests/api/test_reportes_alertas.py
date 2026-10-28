@@ -46,10 +46,9 @@ def test_el_tecnico_no_ve_los_reportes(api: TestClient, mundo: Mundo, ruta: str)
     assert r.status_code == 403 and r.json()["codigo"] == "SIN_PERMISO"
 
 
-@pytest.mark.parametrize("tipo", ["casos", "identificacion", "productores", "tecnicos", "resumen", "consultas"])
-def test_los_demas_reportes_no_existen_todavia(api: TestClient, mundo: Mundo, tipo: str) -> None:
-    """ACTA-003 limitó los reportes a alertas: lo demás espera la ampliación del alcance (P-01)."""
-    assert api.get(f"/api/v1/reportes/{tipo}", headers=mundo.lider.headers).status_code == 404
+def test_rango_mayor_a_12_meses_422(api: TestClient, mundo: Mundo) -> None:
+    r = api.get(URL, params={"desde": "2025-01-01", "hasta": "2026-06-01"}, headers=mundo.lider.headers)
+    assert r.status_code == 422 and r.json()["campos"] == {"hasta": "Máximo 12 meses."}
 
 
 # --- contenido -------------------------------------------------------------------------------------------------------
