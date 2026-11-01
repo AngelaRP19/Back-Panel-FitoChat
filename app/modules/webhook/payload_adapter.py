@@ -15,12 +15,22 @@ class IncomingMessage(TypedDict):
     content: dict[str, Any]
 
 
+class EstadoMensaje(TypedDict):
+    """Lo que Meta informa de un mensaje que enviamos: sent, delivered, read o failed (con su error)."""
+
+    wamid: str
+    estado: str
+    destinatario: str
+    codigo_error: int | None
+    error: str | None
+
+
 class WhatsAppPayloadAdapter:
     """Aísla el formato de WhatsApp Cloud API del resto del sistema."""
 
     @staticmethod
     def extract_messages(payload: dict[str, Any]) -> list[IncomingMessage]:
-        """Recorre entry[].changes[].value.messages[]; los 'statuses' se ignoran."""
+        """Recorre entry[].changes[].value.messages[]; los «statuses» se leen aparte (`extract_statuses`)."""
         result: list[IncomingMessage] = []
         for entry in payload.get("entry") or []:
             for change in entry.get("changes") or []:
@@ -47,6 +57,28 @@ class WhatsAppPayloadAdapter:
             for entry in payload.get("entry") or []
             for change in entry.get("changes") or []
         )
+
+    @staticmethod
+    def extract_statuses(payload: dict[str, Any]) -> list[EstadoMensaje]:
+        """entry[].changes[].value.statuses[]: el destino de los mensajes que envió el bot o el panel."""
+        estados: list[EstadoMensaje] = []
+        for entry in payload.get("entry") or []:
+            for change in entry.get("changes") or []:
+                for status in (change.get("value") or {}).get("statuses") or []:
+                    errores = status.get("errors") or [{}]
+                    error = errores[0] if isinstance(errores[0], dict) else {}
+                    datos_error = error.get("error_data") or {}
+                    detalle = datos_error.get("details") or error.get("title") or error.get("message")
+                    estados.append(
+                        EstadoMensaje(
+                            wamid=str(status.get("id", "")),
+                            estado=str(status.get("status", "")),
+                            destinatario=str(status.get("recipient_id", "")),
+                            codigo_error=error.get("code"),
+                            error=str(detalle) if detalle else None,
+                        )
+                    )
+        return estados
 
     @staticmethod
     def to_queue_body(message: IncomingMessage) -> dict[str, Any]:

@@ -36,6 +36,7 @@ class ResultadoEnvio:
     estado: str  # ENVIADO, SIMULADO o FALLIDO
     id_externo: str | None = None
     error: str | None = None
+    rechazado: bool = False  # Meta respondió con un error: seguro no lo entregó (una caída de red no lo asegura)
 
     @property
     def exito(self) -> bool:
@@ -72,13 +73,13 @@ class WhatsAppSimulado:
 
     def enviar_texto(self, telefono_e164: str, texto: str) -> ResultadoEnvio:
         if telefono_e164 in self.fallan:
-            return ResultadoEnvio(FALLIDO, error="Simulado: el número rechazó el mensaje")
+            return ResultadoEnvio(FALLIDO, error="Simulado: el número rechazó el mensaje", rechazado=True)
         self.enviados.append((telefono_e164, texto))
         return ResultadoEnvio(SIMULADO, id_externo=f"sim-{next(self._consecutivo)}")
 
     def enviar_interactivo(self, telefono_e164: str, mensaje: Interactivo) -> ResultadoEnvio:
         if telefono_e164 in self.fallan:
-            return ResultadoEnvio(FALLIDO, error="Simulado: el número rechazó el mensaje")
+            return ResultadoEnvio(FALLIDO, error="Simulado: el número rechazó el mensaje", rechazado=True)
         self.enviados.append((telefono_e164, texto_visible(mensaje)))
         self.interactivos.append((telefono_e164, mensaje))
         return ResultadoEnvio(SIMULADO, id_externo=f"sim-{next(self._consecutivo)}")
@@ -128,7 +129,9 @@ class WhatsAppCloud:
             return ResultadoEnvio(FALLIDO, error=f"Sin respuesta de Meta: {type(error).__name__}")
         if respuesta.status_code >= 400:
             # Solo el código de error de Meta: el cuerpo puede traer el número del productor.
-            return ResultadoEnvio(FALLIDO, error=f"Meta respondió {respuesta.status_code}{_codigo_error(respuesta)}")
+            return ResultadoEnvio(
+                FALLIDO, error=f"Meta respondió {respuesta.status_code}{_codigo_error(respuesta)}", rechazado=True
+            )
         mensajes = respuesta.json().get("messages") or [{}]
         return ResultadoEnvio(ENVIADO, id_externo=mensajes[0].get("id"))
 

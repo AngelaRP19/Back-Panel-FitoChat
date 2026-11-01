@@ -37,6 +37,7 @@ from app.core.guardrail import recomienda_tratamiento
 from app.core.logging import mask_phone
 from app.infrastructure.ai_client import AiClient, ContextoConsulta, ErrorIA, con_reintentos
 from app.infrastructure.conversaciones_store import Conversacion, ConversacionesStore
+from app.infrastructure.notificaciones_store import NotificacionesStore, get_notificaciones_store
 from app.infrastructure.s3_storage_client import S3StorageClient
 from app.infrastructure.whatsapp_client import WhatsAppClient
 from app.infrastructure.whatsapp_mensajes import (
@@ -60,6 +61,8 @@ from app.modules.panel_api.notificaciones.service import (
     CASO_SIN_TECNICO,
     LIDERES_ACTIVOS_SQL,
     Aviso,
+    avisos_pendientes,
+    marcar_avisos_entregados,
     publicar_sync,
 )
 from app.modules.scheduler.borrado import borrar_caso
@@ -234,9 +237,11 @@ class Orquestador:
         s3: S3StorageClient | None = None,
         ajustes: Settings | None = None,
         dormir: Callable[[float], None] = time.sleep,
+        notificaciones: NotificacionesStore | None = None,
     ) -> None:
         self.ajustes = ajustes or get_settings()
         self.dormir = dormir
+        self._notificaciones = notificaciones
         self.store = store
         self.whatsapp = whatsapp
         self.ai = ai
@@ -277,6 +282,7 @@ class Orquestador:
             conv = Conversacion(m.telefono, Paso.INICIO.value)
         d = Dialogo(s, m, conv, repo.productor_por_telefono(s, m.telefono), Efectos())
         texto = self._texto(m)
+        self._entregar_avisos_pendientes(d)
 
         if conv.caso_id and repo.caso_abierto(s, conv.caso_id) is None:  # lo descartó el job de 72 h o ya no existe
             d.decir(t.CONSULTA_VENCIDA)
@@ -299,6 +305,26 @@ class Orquestador:
             d.ef.conversacion = d.conv
         return d.ef
 
+    @property
+    def notificaciones(self) -> NotificacionesStore:
+        return self._notificaciones or get_notificaciones_store()
+
+    def _entregar_avisos_pendientes(self, d: Dialogo) -> None:
+        """Los avisos del panel que no pudieron salir (fuera de la ventana de 24 h) van antes de la respuesta."""
+        if d.productor is None:
+            return
+        try:
+            pendientes = avisos_pendientes(self.notificaciones, d.productor.id)
+        except Exception:  # noqa: BLE001  (sin DynamoDB la conversación sigue; los avisos quedan para la próxima)
+            logger.exception("No se pudieron leer los avisos pendientes del productor")
+            return
+        if not pendientes:
+            return
+        d.decir(t.NOVEDADES)
+        for aviso in pendientes:
+            d.decir(aviso.texto)
+        d.ef.avisos_entregados_a = d.productor.id
+
     def aplicar(self, m: MensajeEntrante, efectos: Efectos) -> None:
         """Después de confirmar la transacción: guarda el estado y envía las respuestas, en ese orden."""
         if efectos.borrar_conversacion:
@@ -307,21 +333,39 @@ class Orquestador:
             self.store.guardar(efectos.conversacion)
         for aviso in efectos.avisos:
             publicar_sync(aviso)
-        for mensaje in efectos.respuestas:
+        entregados = True
+        for n, mensaje in enumerate(efectos.respuestas, start=1):
             if isinstance(mensaje, str):
                 resultado = self.whatsapp.enviar_texto(m.telefono, mensaje)
             else:
                 resultado = self.whatsapp.enviar_interactivo(m.telefono, mensaje)
-                if not resultado.exito:  # Meta rechazó el interactivo: va en texto, con las opciones numeradas
+                # Solo si Meta lo rechazó: tras una caída de red pudo haberlo entregado y el texto sería un duplicado.
+                if resultado.rechazado:
                     logger.warning(
                         "Meta rechazó el mensaje interactivo; se envía como texto",
                         extra={"wamid": m.wamid, "detalle": resultado.error},
                     )
                     resultado = self.whatsapp.enviar_texto(m.telefono, texto_de(mensaje))
-            if not resultado.exito:
-                logger.error(
-                    "No se pudo enviar la respuesta", extra={"wamid": m.wamid, "celular": mask_phone(m.telefono)}
-                )
+            # Trazabilidad sin el texto: qué salió, en qué paso y con qué id de Meta (el de sus estados).
+            datos = {
+                "wamid_entrante": m.wamid,
+                "celular": mask_phone(m.telefono),
+                "orden": f"{n}/{len(efectos.respuestas)}",
+                "tipo": type(mensaje).__name__ if not isinstance(mensaje, str) else "Texto",
+                "paso": efectos.conversacion.paso if efectos.conversacion else None,
+                "estado": resultado.estado,
+                "wamid": resultado.id_externo,
+            }
+            if resultado.exito:
+                logger.info("Respuesta enviada", extra=datos)
+            else:
+                entregados = False
+                logger.error("No se pudo enviar la respuesta", extra={**datos, "detalle": resultado.error})
+        if efectos.avisos_entregados_a and entregados:  # si algo falló, se vuelven a entregar la próxima vez
+            try:
+                marcar_avisos_entregados(self.notificaciones, efectos.avisos_entregados_a)
+            except Exception:  # noqa: BLE001
+                logger.exception("No se pudieron marcar como entregados los avisos del productor")
 
     @staticmethod
     def _texto(m: MensajeEntrante) -> str:

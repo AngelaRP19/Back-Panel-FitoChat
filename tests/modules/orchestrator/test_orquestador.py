@@ -292,9 +292,53 @@ def test_un_nombre_de_cultivo_vacio_o_demasiado_largo_se_rechaza(sistema: Sistem
 
 def test_si_meta_rechaza_el_interactivo_se_envia_como_texto_con_las_opciones(sistema: Sistema) -> None:
     productor_con_finca(sistema.motor)
-    sistema.whatsapp.enviar_interactivo = lambda telefono, mensaje: ResultadoEnvio(FALLIDO, error="131000")  # type: ignore[method-assign]
+    sistema.whatsapp.enviar_interactivo = lambda telefono, mensaje: ResultadoEnvio(  # type: ignore[method-assign]
+        FALLIDO, error="Meta respondió 400 (código 131000)", rechazado=True
+    )
     respuestas = sistema.escribir("hola")
     assert respuestas[-1] == f"{t.ELEGIR_FINCA}\n1. La Esperanza\n2. {t.FILA_FINCA_NUEVA}"
+
+
+def test_tras_una_caida_de_red_no_se_reenvia_en_texto(sistema: Sistema) -> None:
+    """Sin respuesta de Meta no se sabe si llegó: reenviarlo en texto podía duplicar la pregunta."""
+    productor_con_finca(sistema.motor)
+    sistema.whatsapp.enviar_interactivo = lambda telefono, mensaje: ResultadoEnvio(  # type: ignore[method-assign]
+        FALLIDO, error="Sin respuesta de Meta: ReadTimeout"
+    )
+    assert sistema.escribir("hola") == [t.SALUDO_CON_NOMBRE.format(nombre="Ana")]  # solo el texto; nada repetido
+
+
+# --- avisos del panel que quedaron pendientes (fuera de la ventana de 24 h) -------------------------------------------
+
+
+def test_los_avisos_pendientes_llegan_cuando_el_productor_escribe(sistema: Sistema) -> None:
+    from app.modules.panel_api.notificaciones.service import guardar_aviso_pendiente
+
+    NOTIFICACIONES.vaciar()
+    productor_con_finca(sistema.motor)
+    guardar_aviso_pendiente(NOTIFICACIONES, "PRO-000001", "ASIGNADO", "Tu consulta #0026 ya tiene técnico.")
+    guardar_aviso_pendiente(NOTIFICACIONES, "PRO-000001", "INFORME", "Informe del técnico sobre tu consulta #0026")
+    respuestas = sistema.escribir("hola")
+    assert respuestas[0] == t.NOVEDADES  # primero las novedades (en Windows ambas pueden tener la misma hora)
+    assert sorted(respuestas[1:3]) == [
+        "Informe del técnico sobre tu consulta #0026",
+        "Tu consulta #0026 ya tiene técnico.",
+    ]
+    assert respuestas[-1] == t.ELEGIR_FINCA  # y después la conversación sigue normal
+    assert t.NOVEDADES not in sistema.escribir("1")  # se entregan una sola vez
+
+
+def test_si_no_se_pudieron_entregar_quedan_para_la_proxima(sistema: Sistema) -> None:
+    from app.modules.panel_api.notificaciones.service import avisos_pendientes, guardar_aviso_pendiente
+
+    NOTIFICACIONES.vaciar()
+    productor_con_finca(sistema.motor)
+    guardar_aviso_pendiente(NOTIFICACIONES, "PRO-000001", "CIERRE", "Tu consulta quedó cerrada.")
+    sistema.whatsapp.fallan.add(TELEFONO)
+    sistema.escribir("hola")
+    assert len(avisos_pendientes(NOTIFICACIONES, "PRO-000001")) == 1
+    sistema.whatsapp.fallan.clear()
+    assert "Tu consulta quedó cerrada." in sistema.escribir("hola")
 
 
 def test_la_afectacion_total_no_se_asume_y_abre_el_caso(sistema: Sistema) -> None:

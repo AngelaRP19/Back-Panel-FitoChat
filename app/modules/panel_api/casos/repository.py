@@ -619,3 +619,15 @@ async def opciones_filtro(session: AsyncSession, alcance: Alcance) -> list[tuple
         parametros,
     )
     return [(str(a), str(b), str(c), str(d), str(e)) for a, b, c, d, e in resultado]
+
+
+async def ventana_abierta(session: AsyncSession, telefono: str) -> bool:
+    """El productor escribió en las últimas 24 h (con 15 min de margen): WhatsApp acepta texto libre para él."""
+    abierta = await session.scalar(
+        text(
+            "SELECT COALESCE(max(fecha_recepcion) > fn_ahora() - interval '23 hours 45 minutes', false) "
+            "FROM mensajes_whatsapp WHERE telefono = :t"
+        ),
+        {"t": telefono},
+    )
+    return bool(abierta)

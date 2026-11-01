@@ -17,3 +17,4 @@ class Efectos:
     conversacion: Conversacion | None = None  # estado nuevo que guardar
     borrar_conversacion: bool = False  # la conversación terminó: se borra su estado
     avisos: list[Aviso] = field(default_factory=list)  # notificaciones de la campana del panel (B-10)
+    avisos_entregados_a: str | None = None  # productor al que se le entregaron sus avisos pendientes del panel

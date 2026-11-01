@@ -7,7 +7,7 @@ se revirtió. Si DynamoDB falla, se registra en el log y la operación sigue: un
 import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import text
@@ -118,3 +118,27 @@ def publicar_sync(aviso: Aviso, store: NotificacionesStore | None = None) -> Non
 
 def get_notificador() -> Notificador:
     return Notificador()
+
+
+# --- Avisos de WhatsApp pendientes para el productor ---------------------------------------------------------------
+# Meta solo deja escribirle texto libre al productor dentro de las 24 h siguientes a su último mensaje. Un aviso del
+# panel fuera de esa ventana se guarda aquí (misma tabla, con el productor como destinatario) y el chatbot lo entrega
+# en cuanto el productor vuelva a escribir. La tabla los borra sola a los 30 días (TTL).
+
+AVISO_WHATSAPP = "AVISO_WHATSAPP"
+DIAS_PENDIENTES = 30
+
+
+def guardar_aviso_pendiente(store: NotificacionesStore, id_productor: str, titulo: str, texto: str) -> None:
+    store.publicar(Notificacion(id_productor, nuevo_id(), datetime.now(UTC), AVISO_WHATSAPP, titulo, texto, ""))
+
+
+def avisos_pendientes(store: NotificacionesStore, id_productor: str) -> list[Notificacion]:
+    """Los avisos sin entregar del productor, del más antiguo al más reciente."""
+    desde = datetime.now(UTC) - timedelta(days=DIAS_PENDIENTES)
+    todos = store.listar(id_productor, desde)
+    return sorted((n for n in todos if n.tipo == AVISO_WHATSAPP and not n.leida), key=lambda n: n.en)
+
+
+def marcar_avisos_entregados(store: NotificacionesStore, id_productor: str) -> None:
+    store.marcar_leidas(id_productor, datetime.now(UTC) - timedelta(days=DIAS_PENDIENTES))

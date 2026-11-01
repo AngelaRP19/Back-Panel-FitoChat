@@ -122,6 +122,7 @@ CONFIRMAR_SALIR = "¿Seguro que quieres cancelar la consulta? Se borrarán tus r
 SALIR_HECHO = "Consulta cancelada y datos borrados. Cuando quieras empezar otra, escríbeme."
 SALIR_CANCELADO = "Seguimos con tu consulta."
 REINICIADO = "Listo, empecemos de nuevo."
+NOVEDADES = "Tienes novedades de tu consulta:"
 CONFIRMAR_ABANDONO = "Ya tienes una consulta abierta. ¿Quieres abandonarla y empezar otra?"
 ABANDONO_HECHO = "Listo, descarté la consulta anterior."
 CONTINUAR_EXISTENTE = "Seguimos con tu consulta anterior."
