@@ -1,19 +1,58 @@
 services:
   api:
     build: .
-    image: anuc-backend:1.0
+    image: anuc-backend:1.2
     ports:
       - "8000:8000"
     environment:
+      APP_ENV: local
+      INTEGRACION_WHATSAPP: simulada
+      INTEGRACION_IA: simulada
+      # Clave de pruebas compartida entre la API y `python -m app.core.tokens_prueba` dentro del contenedor.
+      JWT_PRUEBA_KEY_PATH: /tmp/jwt_prueba.pem
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
       AWS_REGION: us-east-1
       AWS_ENDPOINT_URL: http://localstack:4566
       # LocalStack acepta cualquier credencial; solo existen para que boto3 no falle.
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
       SQS_QUEUE_URL: http://localstack:4566/000000000000/mensajes-entrantes.fifo
+      S3_BUCKET_EVIDENCIAS: anuc-evidencias
       WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-token-local}
       WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-secreto-local}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: postgresql+psycopg://anuc:anuc_local@db:5432/anuc_db
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-1024}
+    depends_on:
+      localstack:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+
+  # Consumidor de la cola de mensajes entrantes (misma imagen, otro comando). Docker no lo arranca por defecto:
+  #   docker compose --profile consumer up -d consumer
+  consumer:
+    build: .
+    image: anuc-backend:1.2
+    profiles: ["consumer"]
+    command: ["python", "-m", "app.workers.sqs_consumer"]
+    stop_grace_period: 30s
+    environment:
+      APP_ENV: local
+      INTEGRACION_WHATSAPP: simulada
+      INTEGRACION_IA: simulada
+      AWS_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      SQS_QUEUE_URL: http://localstack:4566/000000000000/mensajes-entrantes.fifo
+      S3_BUCKET_EVIDENCIAS: anuc-evidencias
+      DYNAMODB_TABLA_CONVERSACIONES: conversaciones
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-token-local}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-secreto-local}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: postgresql+psycopg://anuc:anuc_local@db:5432/anuc_db
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-1024}
     depends_on:
       localstack:
         condition: service_healthy
@@ -25,7 +64,7 @@ services:
     ports:
       - "4566:4566"
     environment:
-      SERVICES: sqs
+      SERVICES: sqs,s3,dynamodb
       AWS_DEFAULT_REGION: us-east-1
     volumes:
       - ./localstack/init-sqs.sh:/etc/localstack/init/ready.d/init-sqs.sh:ro
@@ -36,7 +75,7 @@ services:
       timeout: 5s
       retries: 20
 
-  # Aún no se usa: queda lista con PostGIS y pgvector.
+  # PostgreSQL 16 + PostGIS + pgvector. Migraciones: docker compose run --rm api alembic upgrade head
   db:
     build: ./docker/postgres
     image: anuc-postgres:16

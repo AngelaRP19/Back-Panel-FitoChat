@@ -13,6 +13,9 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY app ./app
+# Migraciones dentro de la imagen: una tarea ECS puede correr `alembic upgrade head` contra RDS.
+COPY alembic.ini ./
+COPY migrations ./migrations
 
 USER app
 
