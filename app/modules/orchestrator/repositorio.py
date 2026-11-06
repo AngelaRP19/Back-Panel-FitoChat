@@ -196,6 +196,20 @@ def _caso(f: Any) -> CasoFila:
     return CasoFila(str(f[0]), str(f[1]), str(f[2]), str(f[3]), ESPECIES.a_codigo(str(f[4])), str(f[5]), str(f[6]))
 
 
+def casos_del_productor(s: Session, id_productor: str, limite: int = 5) -> list[tuple[str, str, str, str]]:
+    """(id, estado, finca, lote) de sus consultas más recientes, para «Ver mis casos»."""
+    filas = s.execute(
+        text(
+            "SELECT c.id_caso, e.nombre_estado, f.nombre_finca, cu.nombre_cultivo FROM casos c "
+            "JOIN estados e ON e.id_estado = c.id_estado JOIN cultivos cu ON cu.id_cultivo = c.id_cultivo "
+            "JOIN fincas f ON f.id_finca = cu.id_finca WHERE f.id_productor = :p "
+            "ORDER BY c.fecha_creacion_caso DESC, c.id_caso DESC LIMIT :n"
+        ),
+        {"p": id_productor, "n": limite},
+    )
+    return [(str(a), str(b), str(c), str(d)) for a, b, c, d in filas]
+
+
 def caso_abierto_del_productor(s: Session, id_productor: str) -> CasoFila | None:
     """Su consulta en curso (Caso creado o En análisis), la más reciente."""
     f = s.execute(

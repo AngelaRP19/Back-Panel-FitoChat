@@ -63,7 +63,7 @@ def test_al_asignar_se_avisa_que_tecnico_revisa_la_consulta(
     id_caso = crear_caso(migrated, mundo.cultivo1, "GULUPA", "Pendiente de revisión", enviado_hace=timedelta(days=1))
     r = api.patch(f"{URL}/{id_caso}/asignacion", json={"tecnico_id": mundo.t1.id}, headers=mundo.lider.headers)
     assert r.status_code == 200, r.text
-    [(telefono, texto)] = whatsapp.enviados
+    [(telefono, texto)] = whatsapp.enviados  # solo el aviso: la asignación no lleva menú
     [productor] = consultar(
         migrated, "SELECT telefono_productor AS t FROM productores WHERE id_productor = :p", p=mundo.productor1["id"]
     )
@@ -90,7 +90,7 @@ def test_el_informe_del_diagnostico_llega_con_las_anotaciones_del_tecnico(
     }
     r = api.post(f"{URL}/{id_caso}/diagnostico", json=cuerpo, headers=mundo.t1.headers)
     assert r.status_code == 200, r.text
-    informe = textos(whatsapp)[-1]
+    informe = textos(whatsapp)[-2]  # el último es el menú «¿Qué quieres hacer ahora?»
     assert informe.startswith("Informe del técnico sobre tu consulta #")
     for esperado in (
         "La Esperanza",
@@ -111,7 +111,7 @@ def test_requiere_visita_incluye_el_motivo(
     id_caso = crear_caso(migrated, mundo.cultivo1, "GULUPA", "En revisión", tecnico=mundo.t1.id)
     cuerpo = {"resultado_tecnico": "REQUIERE_VISITA", "motivo_visita": "Hay que ver las raíces."}
     api.post(f"{URL}/{id_caso}/diagnostico", json=cuerpo, headers=mundo.t1.headers)
-    informe = textos(whatsapp)[-1]
+    informe = textos(whatsapp)[-2]
     assert "necesita visitar la finca" in informe and "Visita a la finca: Hay que ver las raíces." in informe
     assert "Problema identificado" not in informe
 
@@ -121,7 +121,7 @@ def test_al_cerrar_se_avisa_al_productor(
 ) -> None:
     id_caso = crear_caso(migrated, mundo.cultivo1, "GULUPA", "Registrado", tecnico=mundo.t1.id)
     assert api.post(f"{URL}/{id_caso}/cierre", headers=mundo.t1.headers).status_code == 200
-    assert "quedó cerrada" in textos(whatsapp)[-1] and "CIERRE" in avisos(migrated)[-1]["descripcion"]
+    assert "quedó cerrada" in textos(whatsapp)[-2] and "CIERRE" in avisos(migrated)[-1]["descripcion"]
 
 
 def test_si_whatsapp_falla_la_accion_igual_se_hace_y_queda_en_la_auditoria(
@@ -173,3 +173,24 @@ def test_el_aviso_enviado_deja_el_wamid_para_seguir_su_entrega(
     id_caso = crear_caso(migrated, mundo.cultivo1, "GULUPA", "Pendiente de revisión", enviado_hace=timedelta(days=1))
     api.patch(f"{URL}/{id_caso}/asignacion", json={"tecnico_id": mundo.t1.id}, headers=mundo.lider.headers)
     assert "(wamid sim-" in avisos(migrated)[-1]["descripcion"]
+
+
+def test_tras_el_informe_y_el_cierre_se_pregunta_que_quiere_hacer(
+    api: TestClient, mundo: Mundo, migrated: Engine, whatsapp: WhatsAppSimulado
+) -> None:
+    from app.modules.orchestrator import textos as t
+
+    id_caso = crear_caso(migrated, mundo.cultivo1, "GULUPA", "En revisión", tecnico=mundo.t1.id)
+    api.post(f"{URL}/{id_caso}/diagnostico", json={"resultado_tecnico": "NO_IDENTIFICADO"}, headers=mundo.t1.headers)
+    assert textos(whatsapp)[-1] == t.QUE_HACER
+    [(_, menu)] = whatsapp.interactivos
+    assert [o.id for o in menu.opciones] == ["caso_nuevo", "mis_casos", "nada"]  # botones, no números
+
+
+def test_si_el_menu_no_sale_el_aviso_igual_queda_enviado(
+    api: TestClient, mundo: Mundo, migrated: Engine, whatsapp: WhatsAppSimulado
+) -> None:
+    whatsapp.enviar_interactivo = lambda *_: ResultadoEnvio(FALLIDO, error="Meta respondió 400")  # type: ignore[method-assign]
+    id_caso = crear_caso(migrated, mundo.cultivo1, "GULUPA", "Registrado", tecnico=mundo.t1.id)
+    assert api.post(f"{URL}/{id_caso}/cierre", headers=mundo.t1.headers).status_code == 200
+    assert "quedó cerrada" in textos(whatsapp)[-1] and "SIMULADO" in avisos(migrated)[-1]["descripcion"]

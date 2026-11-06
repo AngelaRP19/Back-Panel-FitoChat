@@ -55,6 +55,7 @@ from app.modules.consumer.procesador import MensajeEntrante
 from app.modules.identification.reglas import ordenar
 from app.modules.orchestrator import repositorio as repo
 from app.modules.orchestrator import textos as t
+from app.modules.orchestrator.menu_que_hacer import CASO_NUEVO, MENU_QUE_HACER, MIS_CASOS, NADA, OPCIONES
 from app.modules.orchestrator.puertos import Identificador, PipelineImagenes
 from app.modules.panel_api.fincas.schemas import LATITUD_ESPERADA
 from app.modules.panel_api.notificaciones.service import (
@@ -100,6 +101,7 @@ class Paso(StrEnum):
     CONFIRMAR_ENVIO = "CONFIRMAR_ENVIO"
     CONFIRMAR_SALIR = "CONFIRMAR_SALIR"
     CONFIRMAR_ABANDONO = "CONFIRMAR_ABANDONO"
+    QUE_HACER = "QUE_HACER"
 
 
 def normalizar(texto: str) -> str:
@@ -140,6 +142,7 @@ def lista_numerada(opciones: list[tuple[str, str]]) -> str:
 SI, NO, OTRA, NUEVA, NUEVO, LISTO = "si", "no", "otra", "nueva", "nuevo", "listo"
 _NUEVA = {normalizar(x) for x in t.NUEVA}
 _SALIR = {normalizar(x) for x in t.SALIR}
+_AYUDA = {normalizar(x) for x in t.AYUDA_COMANDOS}
 
 
 def si_no(texto: str, si: str = t.BOTON_SI, no: str = t.BOTON_NO) -> Botones:
@@ -271,6 +274,7 @@ class Orquestador:
             Paso.CONFIRMAR_ENVIO: self._confirmar_envio,
             Paso.CONFIRMAR_SALIR: self._confirmar_salir,
             Paso.CONFIRMAR_ABANDONO: self._confirmar_abandono,
+            Paso.QUE_HACER: self._menu_que_hacer,
         }
 
     # --- Punto de entrada ------------------------------------------------------------------------
@@ -282,7 +286,7 @@ class Orquestador:
             conv = Conversacion(m.telefono, Paso.INICIO.value)
         d = Dialogo(s, m, conv, repo.productor_por_telefono(s, m.telefono), Efectos())
         texto = self._texto(m)
-        self._entregar_avisos_pendientes(d)
+        hubo_novedades = self._entregar_avisos_pendientes(d)
 
         if conv.caso_id and repo.caso_abierto(s, conv.caso_id) is None:  # lo descartó el job de 72 h o ya no existe
             d.decir(t.CONSULTA_VENCIDA)
@@ -294,8 +298,16 @@ class Orquestador:
         if conv.caso_id:
             repo.tocar(s, conv.caso_id)  # cada mensaje reinicia el conteo de inactividad
 
-        if normalizar(texto) in _SALIR:  # en cualquier paso: cancelar y empezar de nuevo
+        limpio = normalizar(texto)
+        fin_de_fotos = conv.paso == Paso.FOTOS.value and limpio in _TERMINAR  # «terminar» ahí cierra las fotos
+        if limpio in _AYUDA:  # en cualquier paso: la lista de comandos, sin perder el paso
+            d.decir(t.AYUDA)
+        elif limpio in _SALIR and not fin_de_fotos:  # en cualquier paso: cancelar y empezar de nuevo
             self._pedir_salir(d)
+        elif limpio in {CASO_NUEVO, MIS_CASOS, NADA} and conv.paso == Paso.INICIO.value and not conv.caso_id:
+            self._que_hacer(d, limpio)  # un botón del menú que llegó con el informe o el cierre del panel
+        elif hubo_novedades and conv.paso == Paso.INICIO.value and not conv.caso_id:
+            self._mostrar_menu(d)  # tras las novedades, el productor elige qué sigue
         else:
             paso = Paso(conv.paso)
             self.pasos[paso](d, texto)
@@ -309,21 +321,55 @@ class Orquestador:
     def notificaciones(self) -> NotificacionesStore:
         return self._notificaciones or get_notificaciones_store()
 
-    def _entregar_avisos_pendientes(self, d: Dialogo) -> None:
+    def _entregar_avisos_pendientes(self, d: Dialogo) -> bool:
         """Los avisos del panel que no pudieron salir (fuera de la ventana de 24 h) van antes de la respuesta."""
         if d.productor is None:
-            return
+            return False
         try:
             pendientes = avisos_pendientes(self.notificaciones, d.productor.id)
         except Exception:  # noqa: BLE001  (sin DynamoDB la conversación sigue; los avisos quedan para la próxima)
             logger.exception("No se pudieron leer los avisos pendientes del productor")
-            return
+            return False
         if not pendientes:
-            return
+            return False
         d.decir(t.NOVEDADES)
         for aviso in pendientes:
             d.decir(aviso.texto)
         d.ef.avisos_entregados_a = d.productor.id
+        return True
+
+    def _mostrar_menu(self, d: Dialogo) -> None:
+        d.decir(MENU_QUE_HACER)
+        d.ir_a(Paso.QUE_HACER)
+
+    def _menu_que_hacer(self, d: Dialogo, texto: str) -> None:
+        """Respuesta al menú: un botón, su número o su nombre. Si escribe otra cosa, se le atiende desde el inicio."""
+        ids = {i: (i, titulo) for i, titulo in OPCIONES}
+        elegida = ids.get(normalizar(texto)) or elegir(texto, OPCIONES)
+        d.reiniciar()
+        if elegida is None:
+            self._inicio(d, texto)
+        else:
+            self._que_hacer(d, elegida[0])
+
+    def _que_hacer(self, d: Dialogo, opcion: str) -> None:
+        """Menú tras las novedades o el informe del técnico: abrir otro caso, ver sus casos o terminar."""
+        d.reiniciar()
+        if d.productor is None or not d.productor.activo or d.productor.consentimiento is None:
+            self._inicio(d, "")  # sin cuenta activa o sin consentimiento: el inicio de siempre
+        elif opcion == CASO_NUEVO:
+            self._comenzar(d)
+        elif opcion == MIS_CASOS:
+            casos = repo.casos_del_productor(d.s, d.productor.id)
+            if casos:
+                lista = "\n".join(f"{codigo_caso(i)} · {finca} · {lote}: {estado}" for i, estado, finca, lote in casos)
+                d.decir(t.MIS_CASOS.format(lista=lista))
+            else:
+                d.decir(t.SIN_CASOS_PROPIOS)
+            self._mostrar_menu(d)
+        else:
+            d.decir(t.DESPEDIDA)
+            d.ef.borrar_conversacion = True
 
     def aplicar(self, m: MensajeEntrante, efectos: Efectos) -> None:
         """Después de confirmar la transacción: guarda el estado y envía las respuestas, en ese orden."""

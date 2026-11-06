@@ -10,11 +10,11 @@ y no «responde con el número». Escribir la respuesta sigue funcionando: los b
 # --- Saludo, consentimiento y registro -----------------------------------------------------------
 SALUDO = (
     "Hola, soy el asistente fitosanitario de la ANUC Zetaquirá. Te ayudo a describir un problema en tu cultivo para "
-    "que un técnico lo revise. Si en algún momento quieres empezar de nuevo, escribe REINICIAR."
+    "que un técnico lo revise. Si en algún momento quieres empezar de nuevo, escribe REINICIAR; para ver los comandos, AYUDA."
 )
 SALUDO_CON_NOMBRE = (
     "Hola {nombre}, soy el asistente fitosanitario de la ANUC Zetaquirá. Si en algún momento quieres empezar de "
-    "nuevo, escribe REINICIAR."
+    "nuevo, escribe REINICIAR; para ver los comandos, AYUDA."
 )
 # PROVISIONAL (P-B07): falta el texto aprobado del aviso de privacidad (Ley 1581 de 2012).
 CONSENTIMIENTO = (
@@ -123,6 +123,18 @@ SALIR_HECHO = "Consulta cancelada y datos borrados. Cuando quieras empezar otra,
 SALIR_CANCELADO = "Seguimos con tu consulta."
 REINICIADO = "Listo, empecemos de nuevo."
 NOVEDADES = "Tienes novedades de tu consulta:"
+QUE_HACER = "¿Qué quieres hacer ahora?"
+MIS_CASOS = "Tus consultas más recientes:\n{lista}"
+SIN_CASOS_PROPIOS = "Aún no tienes consultas registradas."
+DESPEDIDA = "Listo. Cuando necesites ayuda con tu cultivo, escríbeme."
+AYUDA = (
+    "Puedes escribirme en cualquier momento:\n"
+    "- REINICIAR (o /salir, cancelar, terminar): empezar de nuevo. Si tienes una consulta abierta, te pregunto "
+    "antes de borrarla.\n"
+    "- LISTO: cuando termines de enviar las fotos.\n"
+    "- AYUDA: ver esta lista.\n"
+    "En las preguntas con opciones, toca la opción o escribe su número."
+)
 CONFIRMAR_ABANDONO = "Ya tienes una consulta abierta. ¿Quieres abandonarla y empezar otra?"
 ABANDONO_HECHO = "Listo, descarté la consulta anterior."
 CONTINUAR_EXISTENTE = "Seguimos con tu consulta anterior."
@@ -140,6 +152,9 @@ BOTON_ENVIAR = "Sí, enviar"
 BOTON_SEGUIR = "No, seguir"
 BOTON_LISTO = "Listo, terminé"
 BOTON_ES_AQUI = "Sí, es aquí"
+BOTON_CASO_NUEVO = "Abrir caso nuevo"
+BOTON_MIS_CASOS = "Ver mis casos"
+BOTON_NADA = "No, gracias"
 BOTON_OTRA_UBICACION = "Enviar otra"
 BOTON_INVERNADERO = "Invernadero"
 BOTON_CAMPO_ABIERTO = "Campo abierto"
@@ -158,6 +173,11 @@ DESCRIPCION_OTRA_VEREDA = "La escribes tú"
 
 AFIRMATIVOS = frozenset({"si", "sí", "s", "claro", "ok", "dale", "acepto", "afirmativo", "yes"})
 NEGATIVOS = frozenset({"no", "n", "nunca", "negativo"})
-SALIR = frozenset({"/salir", "/reiniciar", "reiniciar", "salir", "cancelar", "empezar de nuevo"})
+# Comandos que sirven en cualquier paso (ver AYUDA). «terminar» y «listo» cierran el envío de fotos cuando
+# el bot está pidiendo fotos; en cualquier otro paso, «terminar» es como REINICIAR.
+SALIR = frozenset(
+    {"/salir", "/reiniciar", "reiniciar", "salir", "cancelar", "empezar de nuevo", "terminar", "/terminar"}
+)
+AYUDA_COMANDOS = frozenset({"ayuda", "/ayuda", "comandos", "/comandos", "menu", "menú", "/menu"})
 TERMINAR = frozenset({"listo", "terminar", "ya", "fin", "enviar", "ya envié"})
 NUEVA = frozenset({"nueva", "nuevo", "finca nueva", "lote nuevo", "registrar", "otra", "otro"})

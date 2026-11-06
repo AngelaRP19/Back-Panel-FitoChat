@@ -26,11 +26,15 @@ from app.core.logging import mask_phone
 from app.core.security_cognito import UsuarioActual
 from app.infrastructure.notificaciones_store import NotificacionesStore, get_notificaciones_store
 from app.infrastructure.whatsapp_client import WhatsAppClient
+from app.modules.orchestrator.menu_que_hacer import MENU_QUE_HACER
 from app.modules.panel_api.auditoria import auditar
 from app.modules.panel_api.casos.repository import CasoFila, ventana_abierta
 from app.modules.panel_api.notificaciones.service import guardar_aviso_pendiente
 
 logger = logging.getLogger(__name__)
+
+# Tras estos avisos el caso ya tiene respuesta: se le pregunta al productor qué quiere hacer ahora.
+CON_MENU = frozenset({"INFORME_DIAGNOSTICO", "CIERRE"})
 
 ASIGNADO = (
     "Hola {nombre}, tu consulta {codigo} ({finca} · {lote}) ya tiene técnico: {tecnico} la está revisando. "
@@ -120,7 +124,7 @@ class AvisosProductor:
         datos = {"id_caso": fila.id_caso, "tipo": tipo, "celular": mask_phone(fila.telefono_productor)}
         try:
             if await ventana_abierta(self.session, fila.telefono_productor):
-                estado = await self._enviar_ya(fila, texto, datos)
+                estado = await self._enviar_ya(fila, texto, datos, con_menu=tipo in CON_MENU)
             else:
                 store = self.pendientes or get_notificaciones_store()
                 await run_in_threadpool(guardar_aviso_pendiente, store, fila.id_productor, tipo, texto)
@@ -142,12 +146,17 @@ class AvisosProductor:
             await self.session.rollback()
             logger.exception("No se pudo auditar el aviso al productor", extra={"id_caso": fila.id_caso})
 
-    async def _enviar_ya(self, fila: CasoFila, texto: str, datos: dict[str, str]) -> str:
+    async def _enviar_ya(self, fila: CasoFila, texto: str, datos: dict[str, str], con_menu: bool = False) -> str:
         """Envía el aviso y devuelve lo que queda en la auditoría: estado, wamid de Meta o el error."""
         assert self.whatsapp is not None
         resultado = await run_in_threadpool(self.whatsapp.enviar_texto, fila.telefono_productor, texto)
         if resultado.exito:
             logger.info("Aviso al productor enviado", extra={**datos, "wamid": resultado.id_externo})
+            if con_menu:  # el menú es un extra: si falla, el aviso ya salió
+                enviar_menu = self.whatsapp.enviar_interactivo
+                menu = await run_in_threadpool(enviar_menu, fila.telefono_productor, MENU_QUE_HACER)
+                if not menu.exito:
+                    logger.warning("No salió el menú tras el aviso", extra={**datos, "detalle": menu.error})
         else:
             logger.warning("WhatsApp rechazó el aviso al productor", extra={**datos, "detalle": resultado.error})
         extra = resultado.error or (f"wamid {resultado.id_externo}" if resultado.id_externo else "")

@@ -324,8 +324,10 @@ def test_los_avisos_pendientes_llegan_cuando_el_productor_escribe(sistema: Siste
         "Informe del técnico sobre tu consulta #0026",
         "Tu consulta #0026 ya tiene técnico.",
     ]
-    assert respuestas[-1] == t.ELEGIR_FINCA  # y después la conversación sigue normal
-    assert t.NOVEDADES not in sistema.escribir("1")  # se entregan una sola vez
+    assert respuestas[-1] == t.QUE_HACER and sistema.paso() == "QUE_HACER"  # y se le pregunta qué sigue
+    assert sistema.ultimo_interactivo().opciones[0].id == "caso_nuevo"  # con botones, no con números
+    respuestas = sistema.escribir("1")  # «Abrir caso nuevo» también por su número
+    assert t.NOVEDADES not in respuestas and respuestas[-1] == t.ELEGIR_FINCA  # se entregan una sola vez
 
 
 def test_si_no_se_pudieron_entregar_quedan_para_la_proxima(sistema: Sistema) -> None:
@@ -785,3 +787,79 @@ def test_si_whatsapp_falla_al_responder_el_mensaje_ya_quedo_procesado(
     sistema.escribir("hola")
     assert sistema.paso() == "ELEGIR_FINCA"  # el estado sí avanzó: el mensaje se procesó
     assert "No se pudo enviar la respuesta" in caplog.text and TELEFONO not in caplog.text
+
+
+# --- menú «¿Qué quieres hacer ahora?» y comandos ------------------------------------------------------------------------
+
+
+def _con_novedades(sistema: Sistema) -> None:
+    from app.modules.panel_api.notificaciones.service import guardar_aviso_pendiente
+
+    NOTIFICACIONES.vaciar()
+    productor_con_finca(sistema.motor)
+    guardar_aviso_pendiente(NOTIFICACIONES, "PRO-000001", "CIERRE", "Tu consulta quedó cerrada.")
+    sistema.escribir("hola")
+    assert sistema.paso() == "QUE_HACER"
+
+
+def test_tras_las_novedades_puede_ver_sus_casos(sistema: Sistema) -> None:
+    _con_novedades(sistema)
+    respuestas = sistema.pulsar("mis_casos")
+    assert respuestas == [t.SIN_CASOS_PROPIOS, t.QUE_HACER] and sistema.paso() == "QUE_HACER"
+
+
+def test_tras_las_novedades_puede_terminar(sistema: Sistema) -> None:
+    _con_novedades(sistema)
+    assert sistema.pulsar("nada") == [t.DESPEDIDA]
+    assert sistema.store.obtener(TELEFONO) is None
+
+
+def test_tras_las_novedades_escribir_otra_cosa_empieza_normal(sistema: Sistema) -> None:
+    _con_novedades(sistema)
+    respuestas = sistema.escribir("tengo una plaga")
+    assert respuestas[-1] == t.ELEGIR_FINCA and sistema.paso() == "ELEGIR_FINCA"
+
+
+def test_un_boton_del_menu_que_llego_con_el_informe_abre_un_caso(sistema: Sistema) -> None:
+    """El panel manda el menú tras el informe o el cierre: el botón sirve aunque la conversación ya no exista."""
+    productor_con_finca(sistema.motor)
+    assert sistema.pulsar("caso_nuevo")[-1] == t.ELEGIR_FINCA
+
+
+def test_un_deshabilitado_no_abre_casos_desde_el_menu(sistema: Sistema) -> None:
+    productor_con_finca(sistema.motor, activo=False)
+    assert sistema.pulsar("caso_nuevo") == [t.CUENTA_DESHABILITADA]
+
+
+def test_deshabilitar_a_mitad_de_la_consulta_la_deja_terminar(sistema: Sistema) -> None:
+    """Se deshabilita desde el panel cuando sea; la consulta en curso termina, pero no se abren nuevas."""
+    hasta_cuestionario(sistema, Turno(pregunta=PREGUNTA_1), Turno(completo=True))
+    with sistema.motor.begin() as c:
+        c.execute(sql("UPDATE productores SET estado_cuenta_productor = 'DESHABILITADO'"))
+    sistema.escribir("hace una semana")
+    sistema.foto("m1", "fruto")
+    sistema.escribir("listo")
+    assert sistema.escribir("sí")[0] == t.ENVIADO
+    assert sistema.estado_caso() == "Pendiente de revisión"
+    assert sistema.escribir("hola") == [t.CUENTA_DESHABILITADA]
+
+
+@pytest.mark.parametrize("orden", ["ayuda", "/ayuda", "Comandos", "menú"])
+def test_ayuda_lista_los_comandos_sin_perder_el_paso(sistema: Sistema, orden: str) -> None:
+    hasta_cuestionario(sistema, Turno(pregunta=PREGUNTA_1))
+    paso = sistema.paso()
+    assert sistema.escribir(orden) == [t.AYUDA] and sistema.paso() == paso
+
+
+def test_terminar_fuera_de_las_fotos_es_reiniciar(sistema: Sistema) -> None:
+    hasta_cuestionario(sistema, Turno(pregunta=PREGUNTA_1))
+    assert sistema.escribir("terminar") == [t.CONFIRMAR_SALIR]
+
+
+def test_terminar_en_las_fotos_cierra_el_envio(sistema: Sistema) -> None:
+    hasta_cuestionario(sistema, Turno(pregunta=PREGUNTA_1), Turno(completo=True))
+    sistema.escribir("hace una semana")
+    sistema.foto("m1", "fruto")
+    assert sistema.paso() == "FOTOS"
+    sistema.escribir("terminar")
+    assert sistema.paso() == "CONFIRMAR_ENVIO"
