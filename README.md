@@ -200,10 +200,24 @@ Flujo: saludo y consentimiento → finca (elegir o registrar) → lote (elegir o
 - Un número desconocido se registra con consentimiento (P-B08); uno registrado desde el panel debe aceptar el tratamiento de sus datos (D-12). El texto del aviso es provisional (P-B07).
 - Con varias especies en el lote, cada consulta es de una sola (P-10).
 - **Avisos al productor** (`app/modules/panel_api/casos/avisos_productor.py`): cuando el panel asigna o reasigna el técnico, registra el diagnóstico o cierra el caso, el productor recibe un mensaje en su chat; el del diagnóstico es el informe del técnico (resultado, categoría, descripción, observaciones y motivo de visita). Se envían después de confirmar el cambio y nunca lo hacen fallar. Cada aviso queda en la auditoría (`AVISO_PRODUCTOR`: tipo, caso y resultado del envío, sin teléfono ni texto). Meta solo acepta texto libre dentro de las 24 h siguientes al último mensaje del productor (fuera de ella acepta el envío y después lo descarta, error 131047): por eso, si el productor no ha escrito en las últimas 24 h, el aviso queda **pendiente** (tabla de notificaciones, con el productor como destinatario) y el chatbot se lo entrega («Tienes novedades de tu consulta:») en cuanto vuelva a escribir; la auditoría dice ENVIADO (con el wamid de Meta) o PENDIENTE. Con plantillas aprobadas podría salir de inmediato.
+- **«¿Qué quieres hacer ahora?»** (`app/modules/orchestrator/menu_que_hacer.py`): tras entregar las novedades, y después del informe del técnico o del cierre enviados desde el panel, el productor recibe tres botones: «Abrir caso nuevo», «Ver mis casos» (sus 5 consultas más recientes con su estado) y «No, gracias». Los botones sirven aunque lleguen horas después; si escribe otra cosa, se le atiende desde el inicio.
+- **Productor deshabilitado**: el líder lo deshabilita desde el panel cuando quiera (`PATCH /productores/{id}` con `activo`, o `POST /productores/estado` para varios). El bot solo lo mira al **empezar** una consulta: la que está en curso termina y llega al panel, y los avisos de ese caso le siguen llegando hasta el cierre; una consulta nueva recibe «tu cuenta está deshabilitada».
 - **Trazabilidad de los envíos**: el bot registra cada respuesta que sale (paso, tipo de mensaje y wamid de Meta, sin el texto) y el webhook registra los estados que devuelve Meta (enviado, entregado, leído; los fallidos como advertencia «Meta no entregó un mensaje», con el código de error). Un mensaje con botones solo se reenvía como texto si Meta lo rechazó: tras una caída de red pudo haber llegado y el texto sería un duplicado.
 - A los celulares de los datos de demostración (`3000000xxx`, `seed_demo`) nunca sale un mensaje real: el cliente de WhatsApp los marca como SIMULADO.
 - Fotos: hasta 3 por tipo y 12 en total; mínimo 1 útil. Las valida el pipeline de imágenes (simulado con `INTEGRACION_IA=simulada`). Un caso llega a **Pendiente de revisión** solo con el cuestionario completo y al menos una foto válida.
-- `/salir` pide confirmación y, si confirma, borra el caso con todos sus datos y fotos. Cada mensaje reinicia el conteo de inactividad; responder tras la advertencia de 48 h retoma donde se quedó.
+- Cada mensaje reinicia el conteo de inactividad; responder tras la advertencia de 48 h retoma donde se quedó.
+
+### Comandos del chatbot
+
+Funcionan en cualquier paso, con o sin tildes y en mayúsculas o minúsculas (`textos.py`: `SALIR`, `TERMINAR`, `AYUDA_COMANDOS`):
+
+| Comando | Qué hace |
+|---|---|
+| `REINICIAR`, `/reiniciar`, `salir`, `/salir`, `cancelar`, `empezar de nuevo`, `terminar` | Empieza de nuevo. Con una consulta abierta pide confirmación y, si confirma, borra el caso con todos sus datos y fotos; a mitad del registro de una finca o un lote descarta lo que iba sin guardar |
+| `listo`, `terminar`, `ya`, `fin`, `enviar`, `ya envié` (o el botón «Listo») | Solo mientras el bot pide fotos: termina el envío de fotos y pasa al resumen. Por eso `terminar` ahí cierra las fotos y en cualquier otro paso es como `REINICIAR` |
+| `AYUDA`, `/ayuda`, `comandos`, `menú` | Muestra esta lista sin perder el paso en que va |
+
+En las preguntas con opciones se toca el botón o la fila de la lista; escribir el número o el nombre de la opción también funciona. El saludo recuerda `REINICIAR` y `AYUDA`.
 - Todos los textos del bot están en `app/modules/orchestrator/textos.py`.
 
 ## Reportes
@@ -226,7 +240,7 @@ Diferencias con la simulación del panel, a propósito: «Recepción → asignac
 
 Con `INTEGRACION_IA=real` y `INTEGRACION_WHATSAPP=real` el consumidor usa los clientes reales (`construir_orquestador` en `app/workers/sqs_consumer.py`); con `simulada` todo sigue funcionando sin salir a internet.
 
-**Fotos** (`app/modules/image_pipeline/pipeline.py`): descarga de WhatsApp (Graph API, en dos pasos y con el token) → formato y tamaño del **original** (JPEG o PNG, máximo 5 MB: es lo que Rekognition acepta como bytes) → brillo y nitidez → moderación y dominio con Rekognition (sin contenido inapropiado y que sea una planta) → WebP sin metadatos EXIF y con la orientación corregida → `s3://<bucket>/evidencias/<año>/<mes>/<id>.webp`. Una foto rechazada no se guarda y se le dice al productor por qué. Si falla un servicio (Rekognition, S3), el error sube y el consumidor reintenta el mensaje.
+**Fotos** (`app/modules/image_pipeline/pipeline.py`): descarga de WhatsApp (Graph API, en dos pasos y con el token) → formato y tamaño del **original** (JPEG o PNG, máximo 5 MB: es lo que Rekognition acepta como bytes) → brillo y nitidez → moderación y dominio con Rekognition (sin contenido inapropiado y que sea una planta o fruto de un cultivo: se rechazan comida servida, arreglos florales y paisajes sin cultivo a la vista, RQF30/RQF38) → WebP sin metadatos EXIF y con la orientación corregida → `s3://<bucket>/evidencias/<año>/<mes>/<id>.webp`. Una foto rechazada no se guarda y se le dice al productor por qué; el log registra el motivo y las etiquetas que vio Rekognition (`Foto rechazada`, `Rekognition no reconoce un cultivo en la foto`), para ajustar las listas de `rekognition_client.py` con fotos reales. Si falla un servicio (Rekognition, S3), el error sube y el consumidor reintenta el mensaje.
 
 **Identificación preliminar** (`app/modules/identification/`): al enviar el caso se busca en `conocimiento_embeddings` (pgvector, distancia coseno) el conocimiento más cercano a los síntomas (RAG) y se le pasa a la IA junto con las respuestas y las fotos. La IA estima el *porcentaje de coincidencia de síntomas* por categoría y `reglas.py` decide el resultado: **identificado** si una categoría llega a `UMBRAL_COINCIDENCIA` (50); **ambiguo** si dos llegan y se llevan menos de `UMBRAL_AMBIGUO` (15) puntos (con 15 exactos ya hay ganadora); **no identificado** si ninguna llega. Siempre es preliminar. Todo texto de la IA pasa por el guardrail (sin tratamientos ni «confianza», «probabilidad» o «certeza»). Si la IA no responde, el caso llega al panel sin identificación (D-03).
 
@@ -277,7 +291,7 @@ docker compose exec localstack awslocal sqs receive-message \
   --attribute-names All --message-system-attribute-names All
 ```
 
-Cada mensaje se publica en `mensajes-entrantes.fifo` con `MessageGroupId` = celular del remitente y `MessageDeduplicationId` = `wamid`. Los eventos `statuses` se ignoran. Una firma inválida responde `401`.
+Cada mensaje se publica en `mensajes-entrantes.fifo` con `MessageGroupId` = celular del remitente y `MessageDeduplicationId` = `wamid`. Los eventos `statuses` (enviado, entregado, leído, fallido) no van a la cola: se registran en el log. Una firma inválida responde `401`.
 
 ## Despliegue en AWS
 
@@ -285,7 +299,7 @@ La imagen trae `app`, `alembic.ini` y `migrations`, y se versiona (`anuc-backend
 
 | Necesidad | Comando | Cómo |
 |---|---|---|
-| API | `uvicorn app.main:app` (el `CMD`) | Servicio ECS `anuc-backend-svc` detrás del ALB |
+| API | `uvicorn app.main:app` (el `CMD`) | Servicio ECS `anuc-backend-service` detrás del ALB |
 | Consumidor de la cola | `python -m app.workers.sqs_consumer` | Servicio ECS `anuc-consumer-svc` (1 tarea, sin ALB), misma definición con otro comando |
 | Jobs | `python -m app.jobs.run <nombre>` | EventBridge Scheduler → ECS RunTask (zona `America/Bogota`): `advertencia_inactividad` y `descarte_inactividad` cada 15 min, `retencion` diario 03:00, `evaluar_alertas` diario 03:30 |
 | Migrar | `alembic upgrade head` | Tarea ECS puntual |
@@ -293,7 +307,7 @@ La imagen trae `app`, `alembic.ini` y `migrations`, y se versiona (`anuc-backend
 
 Variables en la Task Definition (las mismas para los tres modos):
 
-- Valores: `APP_ENV=prod`, `AWS_REGION=us-east-1`, `SQS_QUEUE_URL`, `S3_BUCKET_EVIDENCIAS=anuc-evidencias-fitochat`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_SSLMODE=require`, `COGNITO_USER_POOL_ID`, `COGNITO_APP_CLIENT_ID`, `COGNITO_REGION`, `CORS_ORIGINS` (vacío: el panel llama en el mismo origen), `INTEGRACION_WHATSAPP` e `INTEGRACION_IA` (`simulada` hasta la Fase C), `DYNAMODB_TABLA_NOTIFICACIONES=anuc-notificaciones`, `DYNAMODB_TABLA_DOCUMENTOS=anuc-documentos`, `DYNAMODB_TABLA_CONSULTAS=anuc-consultas-reportes` y, en la Fase C, `DYNAMODB_TABLA_CONVERSACIONES=anuc-conversaciones`, `IA_REGION`, `BEDROCK_MODEL_VISION`, `BEDROCK_MODEL_TEXT`, `BEDROCK_MODEL_EMBED`.
+- Valores: `APP_ENV=prod`, `AWS_REGION=us-east-1`, `SQS_QUEUE_URL`, `S3_BUCKET_EVIDENCIAS=anuc-evidencias-fitochat`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_SSLMODE=require`, `COGNITO_USER_POOL_ID`, `COGNITO_APP_CLIENT_ID`, `COGNITO_REGION`, `CORS_ORIGINS` (vacío: el panel llama en el mismo origen), `INTEGRACION_WHATSAPP` e `INTEGRACION_IA` (`real` en producción desde la Fase C; `simulada` para probar sin Meta ni IA), `DYNAMODB_TABLA_NOTIFICACIONES=anuc-notificaciones`, `DYNAMODB_TABLA_DOCUMENTOS=anuc-documentos`, `DYNAMODB_TABLA_CONSULTAS=anuc-consultas-reportes` y, en la Fase C, `DYNAMODB_TABLA_CONVERSACIONES=anuc-conversaciones`, `IA_REGION`, `BEDROCK_MODEL_VISION`, `BEDROCK_MODEL_TEXT`, `BEDROCK_MODEL_EMBED`.
 - Desde Secrets Manager (`ValueFrom`): `DB_USER` y `DB_PASSWORD` (claves `username` y `password` del secreto de RDS), `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET` (y en la Fase C `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`) de `anuc/whatsapp`, e `IA_ROLE_ARN`, `IA_EXTERNAL_ID` de `anuc/ia-cuenta`.
 - No definas `AWS_ENDPOINT_URL` (solo LocalStack).
 
@@ -306,5 +320,7 @@ Permisos del rol de la tarea (`anuc-permisos-app`):
 - Cognito sobre el user pool: `cognito-idp:AdminCreateUser`, `AdminDeleteUser`, `AdminDisableUser`, `AdminEnableUser`, `AdminGetUser`, `AdminUpdateUserAttributes`, `AdminSetUserPassword`.
 - DynamoDB sobre las cuatro tablas `anuc-*`: `GetItem`, `PutItem`, `UpdateItem`, `DeleteItem`, `Query`, `Scan`.
 - Fase C: `sts:AssumeRole` sobre el rol `anuc-ia-invoker` de la cuenta de IA.
+
+Para publicar una versión: imagen `linux/amd64` con la etiqueta `org.opencontainers.image.revision` (el commit), nueva revisión de `anuc-backend` y `anuc-consumer` que solo cambia la imagen, los cuatro schedules `anuc-job-*` apuntando a la nueva revisión de `anuc-backend` (están fijados a una revisión) y `update-service` de los dos servicios. La imagen se construye desde `main`: una imagen hecha desde otra rama puede perder correcciones.
 
 Enrutamiento: una sola URL pública en CloudFront. `/api/*`, `/webhook/*` y `/salud` van al ALB (sin caché, todos los métodos, con la cabecera `X-Origin-Verify`, que el ALB exige); lo demás va al bucket del panel con la función `anuc-spa-rewrite`. El health check del ALB va a `/salud`, puerto 8000.
