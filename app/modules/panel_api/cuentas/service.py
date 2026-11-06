@@ -199,7 +199,9 @@ class CuentasService:
 
     async def actualizar_mi_cuenta(self, usuario: UsuarioActual, datos: ActualizarMe) -> CuentaFila:
         cuenta = await self._obtener_o_404(usuario.id)
-        return await self._aplicar_cambios(cuenta, datos.nombre, None, datos.celular, usuario, "EDITAR_MI_CUENTA")
+        return await self._aplicar_cambios(
+            cuenta, datos.nombre, datos.correo, datos.celular, usuario, "EDITAR_MI_CUENTA"
+        )
 
     async def cambiar_contrasena(self, usuario: UsuarioActual, access_token: str, datos: CambiarContrasenaIn) -> None:
         await self._cognito(
@@ -327,7 +329,7 @@ class CuentasService:
         if not activo:
             await repo.bloquear(self.session, f"ultima_cuenta:{cuenta.rol.value}")
             if await repo.contar_activas(self.session, cuenta.rol) <= 1:
-                raise ApiError(409, "ULTIMA_CUENTA_ACTIVA", "Es la única cuenta activa de su rol.")
+                raise ApiError(409, "UNICA_CUENTA_ACTIVA", "Es la única cuenta activa de su rol.")
 
         operacion, inversa = (
             (self.cognito.habilitar, self.cognito.deshabilitar)

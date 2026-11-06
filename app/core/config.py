@@ -46,6 +46,7 @@ class Settings(BaseSettings):
 
     cors_origins: str = ""
     max_body_bytes: int = 10 * 1024 * 1024  # propuesto en la guía (§7)
+    max_body_bytes_documentos: int = 21 * 1024 * 1024  # PDF de hasta 20 MB + el sobre multipart (B-07)
 
     # Identificación preliminar (guía §2): una categoría con menos de este porcentaje no se sugiere.
     umbral_coincidencia: int = 50
@@ -63,11 +64,12 @@ class Settings(BaseSettings):
     ia_timeout_segundos: int = 30
     ia_pausa_reintento_segundos: float = 1.0
     # Moderación de fotos (Rekognition). PROVISIONALES: el criterio de calidad lo valida el técnico de la ANUC con un
-    # conjunto de imágenes clasificado a mano (RQF35).
+    # conjunto de imágenes clasificado a mano (RQF35). Fotos normales de cultivo en campo promedian entre 40 % y 48 %
+    # de luminosidad; fotos con sobreexposición severa (> 60 %) queman los síntomas foliares.
     foto_confianza_minima: float = 70.0
     foto_nitidez_minima: float = 30.0
     foto_brillo_minimo: float = 15.0
-    foto_brillo_maximo: float = 95.0
+    foto_brillo_maximo: float = 60.0
     whatsapp_graph_version: str = "v21.0"
 
     # Conservación de un caso cerrado, con borrado físico al vencer (guía §2). No se amplía (D-07 rechazado).
@@ -86,6 +88,10 @@ class Settings(BaseSettings):
     # Estado de las conversaciones del chatbot (D-15): tabla de DynamoDB. Sin tabla, en memoria (solo local y pruebas).
     dynamodb_tabla_conversaciones: str | None = None
     conversacion_vigencia_dias: int = 7
+    # Datos no relacionales del panel (D-18, D-19, D-20). Sin tabla: en memoria en local; en prod, ver cada store.
+    dynamodb_tabla_notificaciones: str | None = None
+    dynamodb_tabla_documentos: str | None = None
+    dynamodb_tabla_consultas: str | None = None
 
     whatsapp_verify_token: SecretStr
     whatsapp_app_secret: SecretStr

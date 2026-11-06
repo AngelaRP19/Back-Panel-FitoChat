@@ -31,7 +31,7 @@ async def obtener_me(usuario: CualquierCuenta) -> UsuarioMe:
 
 @router.patch("/me", response_model=UsuarioMe, responses=RESPUESTAS_ESCRITURA)
 async def actualizar_me(datos: ActualizarMe, usuario: CualquierCuenta, servicio: ServicioCuentas) -> UsuarioMe:
-    """Mi cuenta (RQF04): cada persona edita solo su nombre y su celular. El correo no se edita."""
+    """Mi cuenta (RQF04 · B-04): cada persona edita su nombre, correo y celular. Correo y celular, únicos."""
     return _usuario_me(await servicio.actualizar_mi_cuenta(usuario, datos))
 
 

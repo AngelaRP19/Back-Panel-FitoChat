@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import create_engine
 
+import app.infrastructure.db.models  # noqa: F401  (modelos y generador de ids, como en la API)
 from app.core.config import get_database_settings, get_settings
 from app.core.logging import configure_logging
 from app.infrastructure.s3_storage_client import S3StorageClient, build_boto3_s3_client

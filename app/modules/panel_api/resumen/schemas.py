@@ -28,6 +28,7 @@ class KpisLider(BaseModel):
 class CasoPendiente(BaseModel):
     id: str
     codigo: str
+    numero: int = Field(description="Número del caso (241 en CAS-00000241)")
     productor_nombre: str
     enviado_a_panel_en: datetime
     tecnico_asignado_id: str | None

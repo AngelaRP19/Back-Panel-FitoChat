@@ -41,8 +41,9 @@ def asignaciones(motor: Engine, id_caso: str) -> list[dict[str, Any]]:
 
 
 def auditoria_casos(motor: Engine) -> list[dict[str, Any]]:
-    """Solo la auditoría de casos: el escenario también audita el alta de productores y fincas."""
-    return [a for a in auditoria_de(motor) if a["entidad_afectada"] == "casos"]
+    """Solo las acciones sobre casos: el escenario también audita el alta de productores y fincas, y cada acción
+    deja además el registro del aviso al productor (`AVISO_PRODUCTOR`, ver test_avisos_productor.py)."""
+    return [a for a in auditoria_de(motor) if a["entidad_afectada"] == "casos" and a["accion"] != "AVISO_PRODUCTOR"]
 
 
 def evento(motor: Engine, id_caso: str, tipo: str) -> dict[str, Any]:

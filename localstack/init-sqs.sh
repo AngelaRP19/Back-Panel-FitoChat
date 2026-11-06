@@ -33,3 +33,30 @@ awslocal dynamodb create-table \
 awslocal dynamodb update-time-to-live --table-name conversaciones \
   --time-to-live-specification Enabled=true,AttributeName=expira_en
 echo "Tabla conversaciones creada"
+
+# Documentación fitosanitaria (D-18): metadatos por id; el PDF va al bucket de evidencias con el prefijo documentos/.
+awslocal dynamodb create-table \
+  --table-name documentos \
+  --attribute-definitions AttributeName=id_documento,AttributeType=S \
+  --key-schema AttributeName=id_documento,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST
+echo "Tabla documentos creada"
+
+# Consultas guardadas de los reportes (D-19), sin envío programado (D-21).
+awslocal dynamodb create-table \
+  --table-name consultas-reportes \
+  --attribute-definitions AttributeName=id_consulta,AttributeType=S \
+  --key-schema AttributeName=id_consulta,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST
+echo "Tabla consultas-reportes creada"
+
+# Notificaciones de la campana (D-20): por cuenta y fecha, con TTL de 30 días en `expira_en`. Va de última: el
+# healthcheck de docker-compose espera a que exista.
+awslocal dynamodb create-table \
+  --table-name notificaciones \
+  --attribute-definitions AttributeName=destinatario,AttributeType=S AttributeName=fecha_id,AttributeType=S \
+  --key-schema AttributeName=destinatario,KeyType=HASH AttributeName=fecha_id,KeyType=RANGE \
+  --billing-mode PAY_PER_REQUEST
+awslocal dynamodb update-time-to-live --table-name notificaciones \
+  --time-to-live-specification Enabled=true,AttributeName=expira_en
+echo "Tabla notificaciones creada"

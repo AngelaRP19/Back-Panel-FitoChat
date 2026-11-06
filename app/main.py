@@ -23,7 +23,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # El último que se agrega es el más externo: CORS responde primero (incluidos los errores) y el límite de
     # cuerpo queda dentro del correlation_id para que su 413 también lleve X-Request-Id.
-    application.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.max_body_bytes)
+    application.add_middleware(
+        BodySizeLimitMiddleware,
+        max_bytes=settings.max_body_bytes,
+        limites_por_ruta={"/api/v1/documentos": settings.max_body_bytes_documentos},
+    )
     application.add_middleware(CorrelationIdMiddleware)
     application.add_middleware(SecurityHeadersMiddleware)
     if settings.cors_origenes:

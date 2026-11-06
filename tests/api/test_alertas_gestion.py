@@ -252,7 +252,10 @@ def test_los_destinatarios_usan_el_radio_de_la_alerta_no_el_parametro_actual(
 def test_guarda_el_borrador_sin_enviarlo(api: TestClient, mundo: Mundo, zona: Zona, whatsapp: WhatsAppSimulado) -> None:
     confirmada(api, mundo, zona)
     r = api.put(f"{URL}/{zona.alerta}/borrador", json={"mensaje": f"  {MENSAJE}  "}, headers=mundo.lider.headers)
-    assert r.status_code == 200 and r.json()["borrador"] == {"mensaje": MENSAJE} and r.json()["estado"] == "CONFIRMADA"
+    borrador = r.json()["borrador"]
+    assert r.status_code == 200 and borrador["mensaje"] == MENSAJE and r.json()["estado"] == "CONFIRMADA"
+    # Las veredas y la fecha no se guardan todavía: se propone la vereda de la alerta.
+    assert borrador["veredas"] == [r.json()["vereda"]] and borrador["guardado_en"] is None
     assert whatsapp.enviados == []
     again = api.put(f"{URL}/{zona.alerta}/borrador", json={"mensaje": "Otro texto"}, headers=mundo.lider.headers)
     assert again.json()["borrador"]["mensaje"] == "Otro texto"

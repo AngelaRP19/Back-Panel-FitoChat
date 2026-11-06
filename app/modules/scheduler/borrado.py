@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.infrastructure.db import procedimientos as sp
+from app.infrastructure.documentos_store import PREFIJO_S3 as PREFIJO_DOCUMENTOS
 from app.infrastructure.s3_storage_client import S3StorageClient
 
 
@@ -37,6 +38,8 @@ def borrar_caso(
             {"c": id_caso},
         )
     )
+    # La documentación fitosanitaria (`documentos/`, B-07) comparte el bucket: nunca se borra con un caso.
+    claves = [c for c in claves if not c.startswith(PREFIJO_DOCUMENTOS)]
     versiones = sum(
         s3.eliminar_todas_las_versiones(clave) for clave in dict.fromkeys(claves)
     )  # si falla, no se borra nada

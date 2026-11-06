@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 
 from app.core.roles import Rol
-from app.infrastructure.cognito_admin_client import get_cognito_admin
+from app.infrastructure.cognito_admin_client import CognitoSimulado, get_cognito_admin
 from app.main import app
 from tests.api.conftest import CognitoQueFalla, NuevaCuenta, auditoria_de, consultar
 
@@ -56,14 +56,42 @@ def test_el_get_me_refleja_el_cambio(api: TestClient, nueva_cuenta: NuevaCuenta)
     assert api.get(ME, headers=ana.headers).json()["nombre"] == "Nuevo Nombre"
 
 
-def test_el_correo_no_se_puede_editar(api: TestClient, nueva_cuenta: NuevaCuenta, migrated: Engine) -> None:
+def test_cambia_el_correo_en_la_base_y_en_cognito(
+    api: TestClient, nueva_cuenta: NuevaCuenta, migrated: Engine, cognito: CognitoSimulado
+) -> None:
+    """B-04: el panel envía el correo; si cambió, se actualiza en las dos partes y se audita."""
     ana = nueva_cuenta(Rol.TECNICO)
-    r = api.patch(ME, json={"nombre": "Otro", "correo": "otro@anuc.org"}, headers=ana.headers)
-    assert r.status_code == 422 and r.json()["campos"] == {"correo": "El correo no se puede cambiar."}
-    assert consultar(migrated, "SELECT correo_tecnico, nombre_tecnico FROM tecnicos")[0]["correo_tecnico"] == ana.correo
+    r = api.patch(ME, json={"correo": " Ana.Nueva@ANUC.org "}, headers=ana.headers)
+    assert r.status_code == 200 and r.json()["correo"] == "ana.nueva@anuc.org"
+    assert consultar(migrated, "SELECT correo_tecnico FROM tecnicos")[0]["correo_tecnico"] == "ana.nueva@anuc.org"
+    assert cognito.existe("ana.nueva@anuc.org") and not cognito.existe(ana.correo)
+    assert api.get(ME, headers=ana.headers).status_code == 200  # la sesión sigue (se reconoce por sub)
+
+
+def test_el_panel_envia_los_tres_campos_y_el_mismo_correo_no_es_cambio(
+    api: TestClient, nueva_cuenta: NuevaCuenta, migrated: Engine
+) -> None:
+    ana = nueva_cuenta(Rol.TECNICO)
+    cuerpo = {"nombre": "Ana Nueva", "correo": ana.correo, "celular": "+57" + ana.celular}
+    r = api.patch(ME, json=cuerpo, headers=ana.headers)
+    assert r.status_code == 200 and r.json()["nombre"] == "Ana Nueva" and r.json()["correo"] == ana.correo
+
+
+def test_el_correo_de_otra_cuenta_es_409(api: TestClient, nueva_cuenta: NuevaCuenta, migrated: Engine) -> None:
+    ana = nueva_cuenta(Rol.TECNICO)
+    luis = nueva_cuenta(Rol.TECNICO, 2)
+    r = api.patch(ME, json={"correo": luis.correo}, headers=ana.headers)
+    assert r.status_code == 409 and r.json()["campos"] == {"correo": "Este correo ya está registrado"}
     assert (
-        consultar(migrated, "SELECT nombre_tecnico FROM tecnicos")[0]["nombre_tecnico"] == ana.nombre
-    )  # nada se aplicó
+        consultar(migrated, "SELECT correo_tecnico FROM tecnicos ORDER BY id_tecnico")[0]["correo_tecnico"]
+        == ana.correo
+    )
+
+
+def test_correo_invalido_422(api: TestClient, nueva_cuenta: NuevaCuenta) -> None:
+    ana = nueva_cuenta(Rol.TECNICO)
+    r = api.patch(ME, json={"correo": "malo"}, headers=ana.headers)
+    assert r.status_code == 422 and "correo" in r.json()["campos"]
 
 
 def test_sin_cambios_no_toca_nada_ni_audita(api: TestClient, nueva_cuenta: NuevaCuenta, migrated: Engine) -> None:
@@ -83,7 +111,7 @@ def test_sin_cambios_no_toca_nada_ni_audita(api: TestClient, nueva_cuenta: Nueva
     [
         ({"nombre": "  "}, "nombre"),
         ({"nombre": "x" * 101}, "nombre"),
-        ({"celular": "573001234567"}, "celular"),
+        ({"celular": "2001234567"}, "celular"),
         ({"celular": "abc"}, "celular"),
     ],
 )

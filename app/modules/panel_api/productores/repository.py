@@ -251,3 +251,13 @@ async def cambiar_estado(session: AsyncSession, id_productor: str, activo: bool)
         text("UPDATE productores SET estado_cuenta_productor = :estado WHERE id_productor = :id"),
         {"id": id_productor, "estado": ACTIVO if activo else DESHABILITADO},
     )
+
+
+async def resumen(session: AsyncSession) -> tuple[int, int]:
+    """(total, activos) para la cabecera de la pantalla de productores (B-05)."""
+    fila = (
+        await session.execute(
+            text("SELECT count(*), count(*) FILTER (WHERE estado_cuenta_productor = 'ACTIVO') FROM productores")
+        )
+    ).one()
+    return int(fila[0]), int(fila[1])

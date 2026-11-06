@@ -26,7 +26,6 @@ from app.modules.panel_api.alertas.schemas import (
     PaginaAlertas,
     ParametroCategoria,
     ParametrosIn,
-    SeguirOut,
 )
 from app.modules.panel_api.alertas.service import AlertasService
 
@@ -143,12 +142,14 @@ async def corregir_alerta(id_alerta: str, datos: CorregirIn, actor: SoloLider, s
     return await servicio.corregir(actor, id_alerta, datos)
 
 
-@router.post("/{id_alerta}/seguir", response_model=SeguirOut, responses=RESPUESTAS)
-async def seguir_alerta(id_alerta: str, actor: SoloTecnico, servicio: Servicio) -> SeguirOut:
+@router.post("/{id_alerta}/seguir", response_model=AlertaDetalle, responses=RESPUESTAS)
+async def seguir_alerta(id_alerta: str, actor: SoloTecnico, servicio: Servicio) -> AlertaDetalle:
     """«Avisarme cuando cambie» (P-06; el aviso en sí está por definir). Se anota en la auditoría."""
-    return SeguirOut(siguiendo=await servicio.seguir(actor, id_alerta, True))
+    await servicio.seguir(actor, id_alerta, True)
+    return await servicio.detalle(actor, id_alerta)  # el panel espera la alerta completa
 
 
-@router.delete("/{id_alerta}/seguir", response_model=SeguirOut, responses=RESPUESTAS)
-async def dejar_de_seguir_alerta(id_alerta: str, actor: SoloTecnico, servicio: Servicio) -> SeguirOut:
-    return SeguirOut(siguiendo=await servicio.seguir(actor, id_alerta, False))
+@router.delete("/{id_alerta}/seguir", response_model=AlertaDetalle, responses=RESPUESTAS)
+async def dejar_de_seguir_alerta(id_alerta: str, actor: SoloTecnico, servicio: Servicio) -> AlertaDetalle:
+    await servicio.seguir(actor, id_alerta, False)
+    return await servicio.detalle(actor, id_alerta)

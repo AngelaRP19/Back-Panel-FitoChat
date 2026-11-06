@@ -55,12 +55,18 @@ def test_correo_invalido(correo: str) -> None:
 
 @pytest.mark.parametrize(
     "celular",
-    ["", "300123456", "30012345678", "2001234567", "+573001234567", "573001234567", "300 123 4567", "3001234abc"],
+    ["", "300123456", "30012345678", "2001234567", "+583001234567", "3001234abc"],
 )
 def test_celular_invalido(celular: str) -> None:
     with pytest.raises(ValidationError) as exc:
         CuentaIn(**{**VALIDO, "celular": celular})  # type: ignore[arg-type]
     assert mensajes(exc.value)["celular"] == "Escribe un celular de 10 dígitos que empiece por 3"
+
+
+@pytest.mark.parametrize("celular", ["+573001234567", "573001234567", "300 123 4567", "+57 300-123-4567"])
+def test_celular_en_e164_o_con_espacios_se_normaliza(celular: str) -> None:
+    """El panel envía E.164 (+573001234567); la API trabaja con 10 dígitos."""
+    assert CuentaIn(**{**VALIDO, "celular": celular}).celular == "3001234567"  # type: ignore[arg-type]
 
 
 def test_rol_invalido() -> None:
@@ -113,14 +119,15 @@ def test_actualizar_me_acepta_nombre_y_celular_opcionales() -> None:
     assert ActualizarMe(nombre=" Ana ", celular="3001234567").nombre == "Ana"
 
 
-def test_actualizar_me_rechaza_el_correo() -> None:
+def test_actualizar_me_acepta_el_correo() -> None:
+    """B-04: el panel siempre envía el correo; si cambia, se actualiza en Cognito y en la base."""
+    assert ActualizarMe(correo="otro@anuc.org").correo == "otro@anuc.org"
+
+
+def test_actualizar_me_valida_el_correo() -> None:
     with pytest.raises(ValidationError) as exc:
-        ActualizarMe(correo="otro@anuc.org")  # type: ignore[call-arg]
-    assert mensajes(exc.value)["correo"] == "El correo no se puede cambiar."
-
-
-def test_actualizar_me_no_devuelve_el_correo_al_serializar() -> None:
-    assert "correo" not in ActualizarMe(nombre="Ana").model_dump()
+        ActualizarMe(correo="no-es-correo")
+    assert mensajes(exc.value)["correo"].startswith("Escribe un correo válido")
 
 
 # --- edición -----------------------------------------------------------------------------------------------------

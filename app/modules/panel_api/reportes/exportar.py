@@ -68,6 +68,10 @@ def _fila(celdas: list[object]) -> str:
     return SEPARADOR.join(_celda(c) for c in celdas)
 
 
+BOM = "\ufeff"  # para que Excel lea las tildes
+fila_csv = _fila  # la usan otros módulos (exportar productores, B-06)
+
+
 def a_csv(d: Documento) -> bytes:
     r = d.reporte
     bloques: list[list[str]] = [
@@ -99,7 +103,7 @@ def a_csv(d: Documento) -> bytes:
         if s.nota:
             bloque.append(_fila([s.nota]))
         bloques.append(bloque)
-    return ("﻿" + "\r\n\r\n".join("\r\n".join(b) for b in bloques) + "\r\n").encode("utf-8")
+    return (BOM + "\r\n\r\n".join("\r\n".join(b) for b in bloques) + "\r\n").encode("utf-8")
 
 
 # --- PDF ------------------------------------------------------------

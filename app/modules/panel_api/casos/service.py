@@ -31,8 +31,15 @@ from app.core.state_machine import es_asignable, validar_transicion
 from app.core.telefonos import celular_de_e164
 from app.infrastructure.db import procedimientos as sp
 from app.infrastructure.s3_storage_client import VIGENCIA_URL_SEGUNDOS, S3StorageClient
+from app.infrastructure.whatsapp_client import WhatsAppClient
 from app.modules.panel_api.auditoria import auditar
 from app.modules.panel_api.casos import repository as repo
+from app.modules.panel_api.casos.avisos_productor import (
+    AvisosProductor,
+    texto_asignado,
+    texto_cerrado,
+    texto_informe,
+)
 from app.modules.panel_api.casos.repository import Alcance, CasoFila, FiltrosCasos
 from app.modules.panel_api.casos.schemas import (
     Alternativa,
@@ -62,6 +69,8 @@ from app.modules.panel_api.casos.schemas import (
     ResponsableEvento,
     RespuestaOut,
 )
+from app.modules.panel_api.notificaciones import service as avisos
+from app.modules.panel_api.notificaciones.service import Notificador
 
 MAXIMO_FOTOS_UTILES = 12  # guía §2: ≤ 12 útiles por caso
 
@@ -75,6 +84,26 @@ TITULOS_EVENTO = {
     "CASO_CERRADO": "Caso cerrado",
     "CASO_DESCARTADO": "Caso descartado",
 }
+
+
+# Pasos que faltan según el estado: (tipo de evento, título, detalle).
+_ASIGNACION = ("TECNICO_ASIGNADO", "Técnico asignado", "Pendiente · el líder técnico asigna un técnico")
+_DIAGNOSTICO = ("DIAGNOSTICO_REGISTRADO", "Diagnóstico técnico", "Pendiente")
+_CIERRE = ("CASO_CERRADO", "Cierre del caso", "Pendiente · define la fecha de vencimiento de conservación")
+PASOS_PENDIENTES: dict[EstadoCaso, tuple[tuple[str, str, str], ...]] = {
+    EstadoCaso.CREADO: (_ASIGNACION, _DIAGNOSTICO, _CIERRE),
+    EstadoCaso.EN_ANALISIS: (_ASIGNACION, _DIAGNOSTICO, _CIERRE),
+    EstadoCaso.PENDIENTE_REVISION: (_ASIGNACION, _DIAGNOSTICO, _CIERRE),
+    EstadoCaso.EN_REVISION: (_DIAGNOSTICO, _CIERRE),
+    EstadoCaso.REGISTRADO: (_CIERRE,),
+}
+
+
+def _pasos_pendientes(estado: EstadoCaso) -> list[EventoOut]:
+    return [
+        EventoOut(tipo=tipo, titulo=titulo, en=None, detalle=detalle, responsable=None, pendiente=True)
+        for tipo, titulo, detalle in PASOS_PENDIENTES.get(estado, ())
+    ]
 
 
 def alcance_de(actor: UsuarioActual) -> Alcance:
@@ -142,10 +171,26 @@ def permisos(fila: CasoFila, actor: UsuarioActual) -> tuple[bool, bool, bool]:
     )
 
 
+TEXTO_RESULTADO = {
+    "CONFIRMADO": "Confirmado",
+    "OTRA_PATOLOGIA": "Otra patología",
+    "NO_IDENTIFICADO": "No identificado",
+    "REQUIERE_VISITA": "Requiere visita",
+}
+
+
 class CasosService:
-    def __init__(self, session: AsyncSession, s3: S3StorageClient | None = None) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        s3: S3StorageClient | None = None,
+        notificador: Notificador | None = None,
+        whatsapp: WhatsAppClient | None = None,
+    ) -> None:
         self.session = session
         self.s3 = s3
+        self.notificador = notificador or Notificador()
+        self.productor = AvisosProductor(session, whatsapp)  # avisos al chat del productor
 
     async def _fila_o_404(self, actor: UsuarioActual, id_caso: str) -> CasoFila:
         fila = await repo.obtener(self.session, alcance_de(actor), id_caso)
@@ -285,9 +330,13 @@ class CasosService:
         )
 
     async def historial(self, actor: UsuarioActual, id_caso: str) -> list[EventoOut]:
-        """El técnico solo ve el historial de los casos que tiene asignados; el líder, el de todos (guía §2)."""
-        await self._fila_o_404(actor, id_caso)
-        return [
+        """El técnico solo ve el historial de los casos que tiene asignados; el líder, el de todos (guía §2).
+
+        Al final van los pasos que faltan (asignación, diagnóstico, cierre) con `pendiente=true`, como los muestra
+        la línea de tiempo del panel. Los estados finales (Cerrado, Descartado) no tienen pasos pendientes.
+        """
+        fila = await self._fila_o_404(actor, id_caso)
+        ocurridos = [
             EventoOut(
                 tipo=e.tipo,
                 titulo=TITULOS_EVENTO.get(e.tipo, e.tipo.replace("_", " ").capitalize()),
@@ -297,6 +346,7 @@ class CasosService:
             )
             for e in await repo.eventos(self.session, id_caso)
         ]
+        return ocurridos + _pasos_pendientes(_estado(fila))
 
     async def explicacion(self, actor: UsuarioActual, id_caso: str) -> ExplicacionOut:
         fila = await self._fila_o_404(actor, id_caso)
@@ -393,6 +443,15 @@ class CasosService:
                 raise ApiError(409, "TRANSICION_INVALIDA", "El caso ya no admite asignación.") from None
             raise
         fila = await self._fila_o_404(actor, id_caso)
+        # B-10: después del commit. El técnico recibe el caso en su campana.
+        await self.notificador.avisar(
+            [id_tecnico], avisos.CASO_ASIGNADO, "Caso asignado", f"{codigo_caso(id_caso)} · {fila.nombre_productor}",
+            f"/casos/{id_caso}",
+        )  # fmt: skip
+        reasignado = vigente is not None
+        await self.productor.enviar(
+            actor, fila, "REASIGNADO" if reasignado else "ASIGNADO", texto_asignado(fila, nombre_tecnico, reasignado)
+        )
         return a_resumen(fila)
 
     # --- Diagnóstico y cierre ----------------------------------------------------------------------------------------
@@ -428,13 +487,42 @@ class CasosService:
                 datos.descripcion,
                 datos.observaciones,
             )
+            antes = {a[0] for a in await repo.alertas_generadas(self.session)}
             if id_categoria and await repo.categoria_transmisible(self.session, id_categoria):
                 await repo.evaluar_alerta(self.session, id_categoria)
+            alertas_nuevas = [a for a in await repo.alertas_generadas(self.session) if a[0] not in antes]
             await self.session.commit()
         except DBAPIError as error:
             await self.session.rollback()
             raise _traducir(error) from None
+        await self._avisar_diagnostico(actor, id_caso, fila, datos.resultado_tecnico.value, alertas_nuevas)
+        informe = texto_informe(
+            fila,
+            fila.nombre_tecnico or actor.nombre,
+            datos.resultado_tecnico.value,
+            categoria,
+            datos.descripcion,
+            datos.observaciones,
+            motivo,
+        )
+        await self.productor.enviar(actor, fila, "INFORME_DIAGNOSTICO", informe)
         return await self.detalle(actor, id_caso)
+
+    async def _avisar_diagnostico(
+        self, actor: UsuarioActual, id_caso: str, fila: CasoFila, resultado: str, alertas: list[tuple[str, str, str]]
+    ) -> None:
+        """B-10: después del commit. Los líderes ven el diagnóstico y las alertas que generó."""
+        lideres = await avisos.lideres_activos(self.session)
+        await self.notificador.avisar(
+            lideres, avisos.DIAGNOSTICO_REGISTRADO, "Diagnóstico registrado",
+            f"{codigo_caso(id_caso)} · {TEXTO_RESULTADO.get(resultado, resultado)} · {fila.nombre_tecnico or actor.id}",
+            f"/casos/{id_caso}",
+        )  # fmt: skip
+        for id_alerta, categoria, vereda in alertas:
+            await self.notificador.avisar(
+                lideres, avisos.ALERTA_GENERADA, "Alerta generada",
+                f"Posible concentración de {categoria}" + (f" · {vereda}" if vereda else ""), f"/alertas/{id_alerta}",
+            )  # fmt: skip
 
     @staticmethod
     def _validar_diagnostico(datos: DiagnosticoIn, fila: CasoFila) -> tuple[str | None, str | None]:
@@ -496,6 +584,7 @@ class CasosService:
         except DBAPIError as error:
             await self.session.rollback()
             raise _traducir(error) from None
+        await self.productor.enviar(actor, fila, "CIERRE", texto_cerrado(fila))
         return await self.detalle(actor, id_caso)
 
 

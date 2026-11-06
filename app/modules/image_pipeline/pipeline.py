@@ -86,6 +86,12 @@ class PipelineReal:
         self.generar_id = generar_id
 
     def procesar(self, id_caso: str, media_id: str, descripcion: str | None) -> ResultadoImagen:
+        resultado = self._procesar(id_caso, media_id, descripcion)
+        if not resultado.util:  # sin esto, un rechazo no deja rastro y no se puede saber por qué falló una foto
+            logger.info("Foto rechazada", extra={"id_caso": id_caso, "motivo": resultado.motivo})
+        return resultado
+
+    def _procesar(self, id_caso: str, media_id: str, descripcion: str | None) -> ResultadoImagen:
         try:
             original = self.whatsapp.descargar_media(media_id)
         except ErrorDescargaMedia:

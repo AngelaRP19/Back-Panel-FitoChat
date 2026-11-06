@@ -5,7 +5,7 @@ Los nombres de los campos son los del frontend (`porPagina` va en camelCase); el
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 Tono = Literal["info", "ok", "adv", "revision", "peligro", "neutro"]
 Celda = str | int | float
@@ -22,6 +22,7 @@ class ItemBarra(BaseModel):
     etiqueta: str
     valor: float
     texto: str | None = Field(None, description="Texto de la cifra («1,5 días»); por defecto, el valor")
+    categoria: str | None = Field(None, description="Código de la categoría: el panel dibuja su forma")
 
 
 class _SeccionBase(BaseModel):
@@ -67,13 +68,32 @@ class SeccionDatos(_SeccionBase):
 Seccion = Annotated[SeccionBarras | SeccionTabla | SeccionDatos, Field(discriminator="tipo")]
 
 
+TipoReporte = Literal["casos", "identificacion", "alertas", "productores", "tecnicos"]
+
+
 class ReporteDatos(BaseModel):
-    tipo: Literal["alertas"]
+    tipo: TipoReporte
     titulo: str
     subtitulo: str
-    total: int = Field(description="Alertas que coinciden con los filtros")
+    total: int = Field(description="Elementos que coinciden con los filtros (casos, alertas, productores o cuentas)")
     sustantivo: str
     kpis: list[KpiReporte]
+    secciones: list[Seccion]
+
+
+class TarjetaReporte(BaseModel):
+    tipo: TipoReporte
+    titulo: str
+    descripcion: str
+    destacados: list[str]
+
+
+class ResumenReportes(BaseModel):
+    subtitulo: str
+    total: int
+    sustantivo: str
+    kpis: list[KpiReporte]
+    reportes: list[TarjetaReporte]
     secciones: list[Seccion]
 
 
@@ -86,3 +106,29 @@ class Documento(BaseModel):
     chips: list[str]
     generado: str
     nombre_archivo: str
+
+
+Visibilidad = Literal["yo", "equipo"]
+
+
+class ConsultaGuardada(BaseModel):
+    """Consulta guardada (D-19). Sin envío programado (D-21): `envio` siempre es nulo."""
+
+    id: str = Field(examples=["CNS-3FA9C1D2E4"])
+    nombre: str
+    tipo: TipoReporte
+    descripcion: str
+    filtros: dict[str, str]
+    resultado: str = Field(description="Resultado actual («6 casos»), recalculado al pedir la lista")
+    visibilidad: Visibilidad
+    envio: None = None
+    creada_por: str = Field(description="Nombre del líder que la guardó")
+
+
+class DatosConsulta(BaseModel):
+    nombre: Annotated[str, StringConstraints(strip_whitespace=True, min_length=5, max_length=60)]
+    tipo: TipoReporte
+    filtros: dict[str, str] = Field(default_factory=dict)
+    visibilidad: Visibilidad = "equipo"
+    descripcion: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] | None = None
+    envio: object | None = Field(None, description="Se ignora: no hay envío programado (D-21)")
