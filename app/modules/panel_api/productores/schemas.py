@@ -14,10 +14,12 @@ class ProductorIn(BaseModel):
 
 
 class ProductorEditar(BaseModel):
-    """`PATCH /productores/{id}`: nombre y celular. El estado tiene su propio endpoint."""
+    """`PATCH /productores/{id}`: nombre, celular y estado. El formulario del panel envía los tres; el estado también
+    tiene su propio endpoint (`PATCH /productores/{id}/estado`)."""
 
     nombre: Nombre | None = None
     celular: Celular | None = None
+    activo: bool | None = None
 
 
 class FincaDeProductorOut(BaseModel):

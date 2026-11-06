@@ -220,10 +220,14 @@ def test_edita_un_solo_campo(api: TestClient, lider: Cuenta) -> None:
     assert (r.json()["nombre"], r.json()["celular"]) == ("Solo Nombre", p["celular"])
 
 
-def test_el_estado_no_se_cambia_con_el_patch_del_productor(api: TestClient, lider: Cuenta) -> None:
+def test_el_formulario_de_edicion_tambien_cambia_el_estado(api: TestClient, lider: Cuenta, migrated: Engine) -> None:
+    """El panel envía nombre, celular y activo en el mismo PATCH: antes el estado se ignoraba y no cambiaba nunca."""
     p = crear_productor(api, lider)
     r = api.patch(f"{URL}/{p['id']}", json={"nombre": "Otro", "activo": False}, headers=lider.headers)
-    assert r.json()["activo"] is True  # para eso existe PATCH /{id}/estado
+    assert r.status_code == 200 and (r.json()["nombre"], r.json()["activo"]) == ("Otro", False)
+    assert [a["accion"] for a in auditoria_de(migrated)][-2:] == ["EDITAR_PRODUCTOR", "ESTADO_PRODUCTOR"]
+    datos = {"nombre": "Otro", "celular": p["celular"], "activo": True}  # solo el estado cambia
+    assert api.patch(f"{URL}/{p['id']}", json=datos, headers=lider.headers).json()["activo"] is True
 
 
 def test_celular_de_otro_productor_409(api: TestClient, lider: Cuenta) -> None:

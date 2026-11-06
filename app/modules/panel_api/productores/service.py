@@ -78,6 +78,8 @@ class ProductoresService:
         nombre = datos.nombre if datos.nombre is not None and datos.nombre != actual.nombre else None
         nuevo_celular = celular if celular is not None and celular != actual.celular_e164 else None
         if nombre is None and nuevo_celular is None:
+            if datos.activo is not None:  # el formulario también cambia el estado (antes se ignoraba)
+                return await self.cambiar_estado(id_productor, datos.activo, actor)
             return actual  # nada cambió: no se audita
         if nuevo_celular is not None and await repo.celular_registrado(self.session, nuevo_celular, id_productor):
             raise duplicado()
@@ -92,6 +94,8 @@ class ProductoresService:
             nuevo={"nombre": nombre, "celular": nuevo_celular and "actualizado"},
         )
         await self._confirmar()
+        if datos.activo is not None:
+            return await self.cambiar_estado(id_productor, datos.activo, actor)
         return await self.obtener(id_productor)
 
     async def cambiar_estado(self, id_productor: str, activo: bool, actor: UsuarioActual) -> ProductorFila:
