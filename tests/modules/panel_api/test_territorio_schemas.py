@@ -38,7 +38,11 @@ def test_productor_con_celular_invalido(celular: str) -> None:
 
 
 def test_editar_productor_todo_es_opcional_e_ignora_lo_desconocido() -> None:
-    assert ProductorEditar(**{"activo": False}).model_dump(exclude_none=True) == {}  # type: ignore[arg-type]
+    assert ProductorEditar(**{"otro": 1}).model_dump(exclude_none=True) == {}  # type: ignore[arg-type]
+
+
+def test_editar_productor_acepta_el_estado_del_formulario() -> None:
+    assert ProductorEditar(**{"activo": False}).model_dump(exclude_none=True) == {"activo": False}  # type: ignore[arg-type]
 
 
 # --- fincas ------------------------------------------------------------------------------------------------------
