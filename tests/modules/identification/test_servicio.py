@@ -110,7 +110,9 @@ def enviar_consulta(sistema: Sistema, *turnos: Turno) -> list[str]:
     programar(sistema, *turnos)
     productor_con_finca(sistema.motor)
     sistema.escribir("hola")
-    sistema.escribir("1")
+    sistema.pulsar("1")  # la finca
+    sistema.pulsar("1")  # el lote
+    sistema.pulsar("1")  # todo el lote
     for respuesta in ("hace una semana", "en las hojas bajas"):
         if sistema.paso() == "CUESTIONARIO":
             sistema.escribir(respuesta)

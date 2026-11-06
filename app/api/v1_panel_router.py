@@ -8,10 +8,14 @@ from app.modules.panel_api.consulta.router import router as consulta_router
 from app.modules.panel_api.cuentas.router import router as cuentas_router
 from app.modules.panel_api.cuentas.router_auth import router as auth_router
 from app.modules.panel_api.cuentas.router_tecnicos import router as tecnicos_router
+from app.modules.panel_api.documentos.router import router as documentos_router
 from app.modules.panel_api.fincas.router import catalogos as catalogos_router
 from app.modules.panel_api.fincas.router import router as fincas_router
+from app.modules.panel_api.mapa.router import router as mapa_router
+from app.modules.panel_api.notificaciones.router import router as notificaciones_router
 from app.modules.panel_api.productores.router import router as productores_router
 from app.modules.panel_api.reportes.router import router as reportes_router
+from app.modules.panel_api.resumen.router import panel as panel_router
 from app.modules.panel_api.resumen.router import router as resumen_router
 
 router = APIRouter(prefix="/api/v1")
@@ -24,5 +28,9 @@ router.include_router(catalogos_router)
 router.include_router(consulta_router)
 router.include_router(casos_router)
 router.include_router(resumen_router)
+router.include_router(panel_router)
+router.include_router(notificaciones_router)
+router.include_router(mapa_router)
 router.include_router(alertas_router)
 router.include_router(reportes_router)
+router.include_router(documentos_router)

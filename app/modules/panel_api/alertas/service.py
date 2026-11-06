@@ -47,6 +47,8 @@ from app.modules.panel_api.alertas.schemas import (
 )
 from app.modules.panel_api.auditoria import auditar
 from app.modules.panel_api.casos.schemas import PersonaRef
+from app.modules.panel_api.notificaciones import service as avisos
+from app.modules.panel_api.notificaciones.service import Notificador
 
 logger = logging.getLogger(__name__)
 
@@ -77,9 +79,20 @@ def _persona(id_: str | None, nombre: str | None) -> PersonaRef | None:
 
 
 class AlertasService:
-    def __init__(self, session: AsyncSession, whatsapp: WhatsAppClient) -> None:
+    def __init__(self, session: AsyncSession, whatsapp: WhatsAppClient, notificador: Notificador | None = None) -> None:
         self.session = session
         self.whatsapp = whatsapp
+        self.notificador = notificador or Notificador()
+
+    async def _avisar(self, id_alerta: str, tipo: str, titulo: str) -> None:
+        """B-10: después del commit. Líderes activos y técnicos que siguen la alerta."""
+        f = await self._o_404(id_alerta)
+        destinatarios = [
+            *await avisos.lideres_activos(self.session),
+            *await avisos.seguidores_de_alerta(self.session, id_alerta),
+        ]
+        texto = f"{codigo_alerta(id_alerta)} · {f.nombre_categoria}" + (f" · {f.vereda}" if f.vereda else "")
+        await self.notificador.avisar(destinatarios, tipo, titulo, texto, f"/alertas/{id_alerta}")
 
     # --- Lectura ---------------------------------------------------------------------------------------------------
 
@@ -151,15 +164,22 @@ class AlertasService:
             )
         estado = resumen.estado
         decision = _persona(f.id_lider_gestion, f.nombre_lider_gestion)
+        pendientes = await repo.sin_diagnostico(self.session, id_alerta, f.distancia_km)
         return AlertaDetalle(
             **resumen.model_dump(),
             casos=casos,
+            sin_diagnostico=[codigo_caso(c) for c in pendientes],
             confirmada_en=f.fecha_confirmacion if estado is not E.DESCARTADA else None,
             comunicada_en=f.comunicada_el,
             descarte=Descarte(motivo=f.justificacion_descarte or "", por=decision, en=f.fecha_confirmacion)
             if estado is E.DESCARTADA
             else None,
-            borrador=Borrador(mensaje=f.recomendacion) if estado is E.CONFIRMADA and f.recomendacion else None,
+            # Las veredas y la fecha del borrador no se guardan (pendiente de modelo): se propone la de la alerta.
+            borrador=Borrador(
+                mensaje=f.recomendacion, veredas=[resumen.vereda] if resumen.vereda else [], guardado_en=None
+            )
+            if estado is E.CONFIRMADA and f.recomendacion
+            else None,
             mensaje_enviado=f.mensaje_enviado,
             correccion=Correccion(
                 mensaje=f.mensaje_correccion,
@@ -221,6 +241,7 @@ class AlertasService:
             anterior={"estado": estado}, nuevo={"estado": E.CONFIRMADA.value},
         )  # fmt: skip
         await self.session.commit()
+        await self._avisar(id_alerta, avisos.ALERTA_CONFIRMADA, "Alerta confirmada")
         return await self.detalle(actor, id_alerta)
 
     async def descartar(self, actor: UsuarioActual, id_alerta: str, justificacion: str) -> AlertaDetalle:
@@ -325,6 +346,8 @@ class AlertasService:
                 f"{cuenta.get(repo.FALLIDO, 0)} fallidos",
                 nuevo={"estado": E.COMUNICADA.value, "envios": cuenta},
             )  # fmt: skip
+            await self.session.commit()
+            await self._avisar(id_alerta, avisos.ALERTA_COMUNICADA, "Alerta comunicada")
         await self.session.commit()
         return await self.detalle(actor, id_alerta)
 
@@ -367,6 +390,8 @@ class AlertasService:
                 f"{cuenta.get(repo.FALLIDO, 0)} fallidos",
                 nuevo={"estado": E.CORREGIDA.value, "envios": cuenta},
             )  # fmt: skip
+            await self.session.commit()
+            await self._avisar(id_alerta, avisos.ALERTA_CORREGIDA, "Alerta corregida")
         await self.session.commit()
         return await self.detalle(actor, id_alerta)
 

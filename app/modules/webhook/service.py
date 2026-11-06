@@ -23,9 +23,21 @@ class WebhookService:
         Si SQS falla, la excepción se propaga para que el router responda 500 y Meta reintente;
         MessageDeduplicationId = wamid evita duplicar los que ya se habían enviado.
         """
-        statuses = WhatsAppPayloadAdapter.count_statuses(payload)
-        if statuses:
-            logger.debug("Eventos de estado ignorados", extra={"statuses": statuses})
+        for estado in WhatsAppPayloadAdapter.extract_statuses(payload):
+            # Trazabilidad de lo que enviamos: Meta acepta el envío y después informa si lo entregó o no (p. ej.,
+            # 131047: fuera de la ventana de 24 h). El wamid es el mismo `id_externo` que se registró al enviar.
+            datos = {
+                "wamid": estado["wamid"],
+                "estado": estado["estado"],
+                "celular": mask_phone(estado["destinatario"]),
+            }
+            if estado["estado"] == "failed":
+                logger.warning(
+                    "Meta no entregó un mensaje",
+                    extra={**datos, "codigo_error": estado["codigo_error"], "error": estado["error"]},
+                )
+            else:
+                logger.info("Estado de un mensaje enviado", extra=datos)
 
         messages = WhatsAppPayloadAdapter.extract_messages(payload)
         for message in messages:

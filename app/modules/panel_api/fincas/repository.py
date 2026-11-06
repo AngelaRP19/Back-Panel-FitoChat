@@ -342,3 +342,13 @@ async def actualizar_cultivo(
 
 def vereda_a_codigo(nombre: str) -> str:
     return normalizar_codigo(nombre)
+
+
+async def resumen(session: AsyncSession) -> tuple[int, int, list[str]]:
+    """(fincas, cultivos, veredas con fincas) para la cabecera de la pantalla de fincas (B-05)."""
+    fincas = int(await session.scalar(text("SELECT count(*) FROM fincas")) or 0)
+    cultivos = int(await session.scalar(text("SELECT count(*) FROM cultivos")) or 0)
+    veredas = await session.execute(
+        text("SELECT DISTINCT vereda_sector_finca FROM fincas ORDER BY vereda_sector_finca")
+    )
+    return fincas, cultivos, [str(v) for (v,) in veredas]

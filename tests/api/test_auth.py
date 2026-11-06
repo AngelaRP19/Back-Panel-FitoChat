@@ -131,7 +131,7 @@ def test_el_correo_de_un_tecnico_no_se_puede_reusar(api: TestClient, nueva_cuent
         ({"password": "sinnumeros"}, "password"),
         ({"password": "12345678"}, "password"),
         ({"correo": "no-es-correo"}, "correo"),
-        ({"celular": "573001234567"}, "celular"),
+        ({"celular": "31099988"}, "celular"),
         ({"celular": "2001234567"}, "celular"),
         ({"nombre": "   "}, "nombre"),
     ],

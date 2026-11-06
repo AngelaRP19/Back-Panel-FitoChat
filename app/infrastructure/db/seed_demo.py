@@ -30,6 +30,7 @@ from app.core import catalogos_api as api
 from app.core.config import get_database_settings, get_settings
 from app.core.logging import configure_logging
 from app.core.passwords import unusable_password_hash
+from app.core.telefonos import PREFIJO_DEMO
 from app.infrastructure.db import procedimientos as sp
 from app.infrastructure.db.ids import siguiente_id
 from app.infrastructure.db.models import (
@@ -59,7 +60,7 @@ logger = logging.getLogger(__name__)
 
 MARCA = "(demo)"
 DOMINIO_CORREO = "demo.anuc.test"
-PREFIJO_TELEFONO = "573000000"  # celulares 3000000xxx en E.164
+PREFIJO_TELEFONO = PREFIJO_DEMO  # celulares 3000000xxx en E.164
 MESES_CONSERVACION = 6
 
 CE = api.EstadoCaso

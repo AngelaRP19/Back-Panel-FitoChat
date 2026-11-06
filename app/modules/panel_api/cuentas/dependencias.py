@@ -19,7 +19,7 @@ RESPUESTAS_AUTENTICACION: dict[int | str, dict[str, object]] = {
 RESPUESTAS_ESCRITURA: dict[int | str, dict[str, object]] = {
     **RESPUESTAS_AUTENTICACION,
     404: {"model": ErrorRespuesta, "description": "La cuenta no existe."},
-    409: {"model": ErrorRespuesta, "description": "DUPLICADO, YA_EXISTE_LIDER o ULTIMA_CUENTA_ACTIVA."},
+    409: {"model": ErrorRespuesta, "description": "DUPLICADO, YA_EXISTE_LIDER o UNICA_CUENTA_ACTIVA."},
     422: {"model": ErrorRespuesta, "description": "VALIDACION: datos inválidos."},
 }
 

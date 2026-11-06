@@ -1,5 +1,7 @@
 """Middlewares ASGI de seguridad: cabeceras y límite del tamaño del cuerpo."""
 
+from collections.abc import Mapping
+
 from starlette.datastructures import MutableHeaders
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -38,19 +40,24 @@ class _CuerpoDemasiadoGrande(Exception):
 
 
 class BodySizeLimitMiddleware:
-    """Responde 413 si el cuerpo supera `max_bytes`, ya sea por `Content-Length` o contando lo recibido."""
+    """Responde 413 si el cuerpo supera `max_bytes`, ya sea por `Content-Length` o contando lo recibido.
 
-    def __init__(self, app: ASGIApp, max_bytes: int) -> None:
+    `limites_por_ruta` sube (o baja) el límite para rutas exactas, p. ej. la subida de documentos PDF.
+    """
+
+    def __init__(self, app: ASGIApp, max_bytes: int, limites_por_ruta: Mapping[str, int] | None = None) -> None:
         self.app = app
         self.max_bytes = max_bytes
+        self.limites_por_ruta = dict(limites_por_ruta or {})
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
 
+        maximo = self.limites_por_ruta.get(scope.get("path", ""), self.max_bytes)
         declarado = dict(scope["headers"]).get(b"content-length")
-        if declarado is not None and declarado.isdigit() and int(declarado) > self.max_bytes:
+        if declarado is not None and declarado.isdigit() and int(declarado) > maximo:
             await self._rechazar(scope, receive, send)
             return
 
@@ -62,7 +69,7 @@ class BodySizeLimitMiddleware:
             message = await receive()
             if message["type"] == "http.request":
                 recibidos += len(message.get("body", b""))
-                if recibidos > self.max_bytes:
+                if recibidos > maximo:
                     raise _CuerpoDemasiadoGrande
             return message
 
