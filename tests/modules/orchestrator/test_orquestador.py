@@ -863,3 +863,11 @@ def test_terminar_en_las_fotos_cierra_el_envio(sistema: Sistema) -> None:
     assert sistema.paso() == "FOTOS"
     sistema.escribir("terminar")
     assert sistema.paso() == "CONFIRMAR_ENVIO"
+
+
+def test_si_el_productor_ya_no_existe_a_mitad_de_la_consulta_se_empieza_de_nuevo(sistema: Sistema) -> None:
+    """Antes fallaba en cada reintento (AssertionError) y el número quedaba sin respuesta."""
+    hasta_afectacion(sistema)
+    with sistema.motor.begin() as c:
+        c.execute(sql("UPDATE productores SET telefono_productor = '573009999999'"))  # le cambiaron el celular
+    assert sistema.escribir("1") == [t.SALUDO, t.CONSENTIMIENTO] and sistema.paso() == "CONSENTIMIENTO"

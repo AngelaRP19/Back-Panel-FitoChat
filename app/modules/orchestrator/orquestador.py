@@ -143,6 +143,7 @@ SI, NO, OTRA, NUEVA, NUEVO, LISTO = "si", "no", "otra", "nueva", "nuevo", "listo
 _NUEVA = {normalizar(x) for x in t.NUEVA}
 _SALIR = {normalizar(x) for x in t.SALIR}
 _AYUDA = {normalizar(x) for x in t.AYUDA_COMANDOS}
+_SIN_PRODUCTOR = {"INICIO", "CONSENTIMIENTO", "NOMBRE"}  # los únicos pasos de alguien aún sin registrar
 
 
 def si_no(texto: str, si: str = t.BOTON_SI, no: str = t.BOTON_NO) -> Botones:
@@ -285,6 +286,9 @@ class Orquestador:
         if conv.paso not in {p.value for p in Paso}:  # estado de una versión anterior: se empieza de nuevo
             conv = Conversacion(m.telefono, Paso.INICIO.value)
         d = Dialogo(s, m, conv, repo.productor_por_telefono(s, m.telefono), Efectos())
+        if d.productor is None and conv.paso not in _SIN_PRODUCTOR:  # lo borraron o le cambiaron el celular a mitad
+            logger.warning("La conversación era de un productor que ya no existe", extra={"paso": conv.paso})
+            d.reiniciar()
         texto = self._texto(m)
         hubo_novedades = self._entregar_avisos_pendientes(d)
 
