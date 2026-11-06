@@ -64,11 +64,12 @@ class Settings(BaseSettings):
     ia_timeout_segundos: int = 30
     ia_pausa_reintento_segundos: float = 1.0
     # Moderación de fotos (Rekognition). PROVISIONALES: el criterio de calidad lo valida el técnico de la ANUC con un
-    # conjunto de imágenes clasificado a mano (RQF35).
+    # conjunto de imágenes clasificado a mano (RQF35). Fotos normales de cultivo en campo promedian entre 40 % y 48 %
+    # de luminosidad; fotos con sobreexposición severa (> 60 %) queman los síntomas foliares.
     foto_confianza_minima: float = 70.0
     foto_nitidez_minima: float = 30.0
     foto_brillo_minimo: float = 15.0
-    foto_brillo_maximo: float = 95.0
+    foto_brillo_maximo: float = 60.0
     whatsapp_graph_version: str = "v21.0"
 
     # Conservación de un caso cerrado, con borrado físico al vencer (guía §2). No se amplía (D-07 rechazado).

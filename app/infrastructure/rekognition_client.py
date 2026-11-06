@@ -12,8 +12,58 @@ from app.infrastructure.ia_credenciales import ProveedorClientesIA, get_proveedo
 
 MAXIMO_BYTES = 5 * 1024 * 1024
 # Etiquetas de Rekognition que indican que la foto es de una planta o de su fruto.
+# Nota: "food" se excluye intencionalmente porque acepta alimentos servidos, platos,
+# cuencos y artesanías sin presencia vegetal. Los frutos y cultivos reales siempre traen
+# "fruit", "produce", "plant" o su jerarquía botánica en Parents.
 ETIQUETAS_DE_PLANTA = frozenset(
-    {"plant", "leaf", "fruit", "flower", "vegetation", "tree", "produce", "food", "herbal", "vine", "herbs", "blossom"}
+    {
+        "plant",
+        "leaf",
+        "fruit",
+        "flower",
+        "vegetation",
+        "tree",
+        "produce",
+        "herbal",
+        "vine",
+        "herbs",
+        "blossom",
+        "bud",
+        "sprout",
+        "petal",
+        "flora",
+        "crop",
+        "seedling",
+    }
+)
+
+# Contextos no agrícolas que descalifican la foto para diagnóstico fitosanitario
+# (arreglos florales comerciales, centros de mesa, presentación de platos):
+ETIQUETAS_DE_EXCLUSION = frozenset(
+    {
+        "flower arrangement",
+        "flower bouquet",
+        "food presentation",
+    }
+)
+
+# Etiquetas de paisaje amplio/panorámico que requieren evidencia cercana del cultivo:
+ETIQUETAS_DE_PAISAJE = frozenset(
+    {
+        "scenery",
+        "landscape",
+    }
+)
+
+# Evidencia de partes del cultivo en primer plano para no descartar fotos que incluyan paisaje de fondo:
+ETIQUETAS_DETALLE_CULTIVO = frozenset(
+    {
+        "leaf",
+        "fruit",
+        "produce",
+        "herbal",
+        "vine",
+    }
 )
 
 
@@ -56,9 +106,28 @@ class RekognitionReal:
             etiquetas = rk.detect_labels(Image={"Bytes": imagen}, MinConfidence=self._confianza, MaxLabels=25)
         except Exception as error:
             raise ErrorModeracion(f"Falló Rekognition: {type(error).__name__}") from error
-        nombres = {str(e["Name"]).lower() for e in etiquetas.get("Labels", [])}
+        labels_list = etiquetas.get("Labels", [])
+        etiquetas_dict = {str(e.get("Name", "")).lower(): float(e.get("Confidence", 0.0)) for e in labels_list}
+        nombres = set(etiquetas_dict.keys())
+        padres = {str(p.get("Name", "")).lower() for e in labels_list for p in e.get("Parents", [])}
+        todas = nombres | padres
+
+        # 1. Presencia botánica válida en nombres directos o jerarquía de padres (ej. familias o especies botánicas)
+        tiene_botanica = bool(todas & ETIQUETAS_DE_PLANTA)
+
+        # 2. Descalificación por arreglos ornamentales o presentaciones gastronómicas
+        es_adorno = bool(nombres & ETIQUETAS_DE_EXCLUSION)
+
+        # 3. Descalificación por paisajes panorámicos (bosques, montañas, horizontes) sin primer plano de cultivo
+        es_paisaje = any(etiquetas_dict.get(p, 0.0) >= self._confianza for p in ETIQUETAS_DE_PAISAJE)
+        tiene_detalle_cultivo = bool(nombres & ETIQUETAS_DETALLE_CULTIVO)
+        es_panorama_sin_cultivo = es_paisaje and not tiene_detalle_cultivo
+
+        es_planta = tiene_botanica and not es_adorno and not es_panorama_sin_cultivo
+
         return ResultadoModeracion(
-            inapropiada=bool(moderacion.get("ModerationLabels")), es_planta=bool(nombres & ETIQUETAS_DE_PLANTA)
+            inapropiada=bool(moderacion.get("ModerationLabels")),
+            es_planta=es_planta,
         )
 
 

@@ -57,3 +57,50 @@ def test_el_simulado_acepta_todo_salvo_lo_programado() -> None:
     m = ModeradorSimulado(inapropiadas={b"mala"}, no_plantas={b"auto"})
     assert m.analizar(b"hoja") == ResultadoModeracion(False, True)
     assert m.analizar(b"mala").inapropiada and not m.analizar(b"auto").es_planta and m.analizadas == 3
+
+
+# --- Fotos que no tienen que ver con el cultivo (RQF38): comida, adornos y paisajes ------------------------------------
+
+
+class ConEtiquetas(RekognitionFalso):
+    """Etiquetas con confianza y padres, como las devuelve Rekognition."""
+
+    def __init__(self, etiquetas: list[dict[str, Any]]) -> None:
+        super().__init__([], [])
+        self.completas = etiquetas
+
+    def detect_labels(self, **p: Any) -> dict[str, Any]:
+        return {"Labels": self.completas}
+
+
+def etiqueta(nombre: str, confianza: float = 95.0, padres: tuple[str, ...] = ()) -> dict[str, Any]:
+    return {"Name": nombre, "Confidence": confianza, "Parents": [{"Name": p} for p in padres]}
+
+
+def es_planta(*etiquetas: dict[str, Any]) -> bool:
+    return RekognitionReal(lambda: ConEtiquetas(list(etiquetas)), 70.0).analizar(b"x").es_planta
+
+
+def test_un_plato_de_comida_no_es_una_planta() -> None:
+    """«Food» ya no cuenta: aceptaba platos, cuencos y comida servida."""
+    assert not es_planta(etiqueta("Food"), etiqueta("Dish"), etiqueta("Meal"))
+
+
+def test_un_arreglo_floral_no_sirve_para_el_diagnostico() -> None:
+    assert not es_planta(etiqueta("Flower"), etiqueta("Flower Arrangement"), etiqueta("Vase"))
+
+
+def test_un_paisaje_sin_el_cultivo_en_primer_plano_no_sirve() -> None:
+    assert not es_planta(etiqueta("Landscape"), etiqueta("Tree"), etiqueta("Mountain"))
+
+
+def test_un_paisaje_con_hojas_en_primer_plano_si_sirve() -> None:
+    assert es_planta(etiqueta("Landscape"), etiqueta("Leaf"), etiqueta("Plant"))
+
+
+def test_la_planta_se_reconoce_tambien_por_sus_padres_botanicos() -> None:
+    assert es_planta(etiqueta("Passion Fruit", padres=("Fruit", "Plant")))
+
+
+def test_un_paisaje_con_poca_confianza_no_descalifica() -> None:
+    assert es_planta(etiqueta("Scenery", confianza=60.0), etiqueta("Plant"))
