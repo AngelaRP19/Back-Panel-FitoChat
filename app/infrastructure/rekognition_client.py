@@ -4,11 +4,14 @@ Rekognition acepta JPEG y PNG de hasta 5 MB **como bytes**: por eso la foto se v
 convertirla a WebP. Hace dos preguntas: ¿es contenido inapropiado? y ¿es una planta o un cultivo (dominio)?
 """
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from app.core.config import get_settings
 from app.infrastructure.ia_credenciales import ProveedorClientesIA, get_proveedor_ia
+
+logger = logging.getLogger(__name__)
 
 MAXIMO_BYTES = 5 * 1024 * 1024
 # Etiquetas de Rekognition que indican que la foto es de una planta o de su fruto.
@@ -124,6 +127,16 @@ class RekognitionReal:
         es_panorama_sin_cultivo = es_paisaje and not tiene_detalle_cultivo
 
         es_planta = tiene_botanica and not es_adorno and not es_panorama_sin_cultivo
+        if not es_planta:  # las etiquetas permiten ajustar las listas con fotos reales rechazadas
+            logger.info(
+                "Rekognition no reconoce un cultivo en la foto",
+                extra={
+                    "etiquetas": sorted(nombres)[:20],
+                    "tiene_botanica": tiene_botanica,
+                    "es_adorno": es_adorno,
+                    "es_panorama_sin_cultivo": es_panorama_sin_cultivo,
+                },
+            )
 
         return ResultadoModeracion(
             inapropiada=bool(moderacion.get("ModerationLabels")),
