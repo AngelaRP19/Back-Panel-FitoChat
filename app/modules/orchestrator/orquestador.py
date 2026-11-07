@@ -81,7 +81,6 @@ ACCION_ABANDONO = "BORRAR_ABANDONO"
 class Paso(StrEnum):
     INICIO = "INICIO"
     CONSENTIMIENTO = "CONSENTIMIENTO"
-    NOMBRE = "NOMBRE"
     ELEGIR_FINCA = "ELEGIR_FINCA"
     FINCA_NOMBRE = "FINCA_NOMBRE"
     FINCA_VEREDA = "FINCA_VEREDA"
@@ -143,7 +142,6 @@ SI, NO, OTRA, NUEVA, NUEVO, LISTO = "si", "no", "otra", "nueva", "nuevo", "listo
 _NUEVA = {normalizar(x) for x in t.NUEVA}
 _SALIR = {normalizar(x) for x in t.SALIR}
 _AYUDA = {normalizar(x) for x in t.AYUDA_COMANDOS}
-_SIN_PRODUCTOR = {"INICIO", "CONSENTIMIENTO", "NOMBRE"}  # los únicos pasos de alguien aún sin registrar
 
 
 def si_no(texto: str, si: str = t.BOTON_SI, no: str = t.BOTON_NO) -> Botones:
@@ -255,7 +253,6 @@ class Orquestador:
         self.pasos: dict[Paso, Callable[[Dialogo, str], None]] = {
             Paso.INICIO: self._inicio,
             Paso.CONSENTIMIENTO: self._consentimiento,
-            Paso.NOMBRE: self._nombre,
             Paso.ELEGIR_FINCA: self._elegir_finca,
             Paso.FINCA_NOMBRE: self._finca_nombre,
             Paso.FINCA_VEREDA: self._finca_vereda,
@@ -286,11 +283,10 @@ class Orquestador:
         if conv.paso not in {p.value for p in Paso}:  # estado de una versión anterior: se empieza de nuevo
             conv = Conversacion(m.telefono, Paso.INICIO.value)
         d = Dialogo(s, m, conv, repo.productor_por_telefono(s, m.telefono), Efectos())
-        if d.productor is None and conv.paso not in _SIN_PRODUCTOR:  # lo borraron o le cambiaron el celular a mitad
-            logger.warning("La conversación era de un productor que ya no existe", extra={"paso": conv.paso})
-            d.reiniciar()
+        hubo_novedades = self._entregar_avisos_pendientes(d)  # un deshabilitado también recibe las de su caso
+        if d.productor is None or not d.productor.activo:  # RQF27/RQNF07/RQF08: se verifica en cada mensaje
+            return self._rechazar(d)
         texto = self._texto(m)
-        hubo_novedades = self._entregar_avisos_pendientes(d)
 
         if conv.caso_id and repo.caso_abierto(s, conv.caso_id) is None:  # lo descartó el job de 72 h o ya no existe
             d.decir(t.CONSULTA_VENCIDA)
@@ -427,15 +423,21 @@ class Orquestador:
 
     # --- Inicio, consentimiento y registro -------------------------------------------------------
 
+    @staticmethod
+    def _rechazar(d: Dialogo) -> Efectos:
+        """Número no registrado por el líder (RQF07) o cuenta deshabilitada (RQF08): no se atiende ni se guarda nada
+        de la conversación. Una consulta que estaba a medias queda abierta y la descarta el job de inactividad; lo ya
+        enviado al panel sigue su curso y sus avisos le siguen llegando."""
+        motivo = "NO_REGISTRADO" if d.productor is None else "DESHABILITADO"
+        logger.info("Acceso al chatbot rechazado", extra={"motivo": motivo, "celular": mask_phone(d.m.telefono)})
+        d.decir(t.NO_AUTORIZADO if d.productor is None else t.CUENTA_DESHABILITADA)
+        d.ef.borrar_conversacion = True
+        return d.ef
+
     def _inicio(self, d: Dialogo, texto: str) -> None:
         p = d.productor
-        if p is None:
-            d.decir(t.SALUDO)
-            d.decir(MENU_CONSENTIMIENTO)
-            d.ir_a(Paso.CONSENTIMIENTO)
-            return
-        if not p.activo:
-            d.decir(t.CUENTA_DESHABILITADA)
+        if p is None or not p.activo:  # no llega aquí (`manejar` ya rechazó): por si se llama desde otro paso
+            self._rechazar(d)
             return
         d.decir(t.SALUDO_CON_NOMBRE.format(nombre=p.nombre.split()[0]))
         if p.consentimiento is None:  # registrado desde el panel: falta que acepte el tratamiento de sus datos (D-12)
@@ -451,25 +453,10 @@ class Orquestador:
         elif not respuesta:
             d.decir(t.CONSENTIMIENTO_NEGADO)
             d.reiniciar()
-        elif d.productor is None:
-            d.decir(t.PEDIR_NOMBRE)
-            d.ir_a(Paso.NOMBRE)
         else:
+            assert d.productor is not None  # `manejar` solo deja pasar a productores registrados y activos
             repo.dar_consentimiento(d.s, d.productor.id)
             self._comenzar(d)
-
-    def _nombre(self, d: Dialogo, texto: str) -> None:
-        nombre = " ".join(texto.split())
-        if not 2 <= len(nombre) <= 100 or not re.search(r"[^\W\d_]", nombre):
-            d.decir(t.NOMBRE_INVALIDO)
-            return
-        id_productor = repo.registrar_productor(d.s, nombre, d.m.telefono)
-        repo.registrar_auditoria(
-            d.s, "REGISTRO_PRODUCTOR", f"Productor {id_productor} registrado por WhatsApp con consentimiento"
-        )
-        d.productor = repo.productor_por_telefono(d.s, d.m.telefono)
-        d.decir(t.BIENVENIDA_NUEVO.format(nombre=nombre.split()[0]))
-        self._comenzar(d)
 
     def _comenzar(self, d: Dialogo) -> None:
         assert d.productor is not None

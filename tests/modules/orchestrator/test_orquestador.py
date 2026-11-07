@@ -52,49 +52,45 @@ def hasta_cuestionario(s: Sistema, *turnos: Turno) -> list[str]:
 # --- registro y consentimiento -----------------------------------------------------------------------------------
 
 
-def test_un_numero_desconocido_recibe_el_saludo_y_el_aviso_de_privacidad(sistema: Sistema) -> None:
-    respuestas = sistema.escribir("hola")
-    assert respuestas == [t.SALUDO, t.CONSENTIMIENTO]
-    assert sistema.paso() == "CONSENTIMIENTO"
-    assert sistema.consulta("SELECT 1 FROM productores") == []  # nada se guarda sin consentimiento
+@pytest.mark.parametrize("texto", ["hola", "sí", "Juan Pérez", "REINICIAR", "ayuda", "caso_nuevo"])
+def test_un_numero_no_registrado_se_rechaza_en_cada_mensaje(sistema: Sistema, texto: str) -> None:
+    """RQF27/RQNF07 (I-09, DF-08001, DF-NF070001): solo entra un número que el líder registró en el panel."""
+    assert sistema.escribir(texto) == [t.NO_AUTORIZADO]
+    assert sistema.paso() is None  # no queda conversación
+    assert sistema.consulta("SELECT 1 FROM productores") == [] and sistema.consulta("SELECT 1 FROM casos") == []
+
+
+def test_un_numero_no_registrado_no_puede_registrarse_solo(sistema: Sistema) -> None:
+    for texto in ("hola", "sí", "Juan Pérez", "1"):
+        assert sistema.escribir(texto) == [t.NO_AUTORIZADO]
+    assert sistema.consulta("SELECT 1 FROM productores") == []
+
+
+def test_el_aviso_de_privacidad_incluye_la_transferencia_internacional() -> None:
+    """Ley 1581 de 2012, art. 26 (I-13): el productor autoriza que sus datos se guarden fuera de Colombia."""
+    assert "Estados Unidos" in t.CONSENTIMIENTO and "Amazon Web Services" in t.CONSENTIMIENTO
 
 
 def test_si_no_acepta_no_se_guarda_nada(sistema: Sistema) -> None:
+    productor_con_finca(sistema.motor, consentimiento=False)
     sistema.escribir("hola")
     assert sistema.escribir("No") == [t.CONSENTIMIENTO_NEGADO]
-    assert sistema.consulta("SELECT 1 FROM productores") == [] and sistema.paso() == "INICIO"
+    assert sistema.consulta("SELECT fecha_consentimiento AS f FROM productores")[0]["f"] is None
+    assert sistema.paso() == "INICIO"
 
 
 @pytest.mark.parametrize("texto", ["tal vez", "???", "42"])
 def test_una_respuesta_que_no_es_si_ni_no_se_repite(sistema: Sistema, texto: str) -> None:
+    productor_con_finca(sistema.motor, consentimiento=False)
     sistema.escribir("hola")
     assert sistema.escribir(texto) == [t.SI_O_NO] and sistema.paso() == "CONSENTIMIENTO"
 
 
 @pytest.mark.parametrize("afirmacion", ["Sí", "si", "SÍ.", "claro", "¡Sí!"])
 def test_acepta_de_varias_formas(sistema: Sistema, afirmacion: str) -> None:
+    productor_con_finca(sistema.motor, consentimiento=False)
     sistema.escribir("hola")
-    assert sistema.escribir(afirmacion) == [t.PEDIR_NOMBRE]
-
-
-def test_un_numero_desconocido_se_registra_con_consentimiento(sistema: Sistema) -> None:
-    sistema.escribir("hola")
-    sistema.escribir("sí")
-    for malo in ("1", "?", "A"):
-        assert sistema.escribir(malo) == [t.NOMBRE_INVALIDO] and sistema.paso() == "NOMBRE"
-    respuestas = sistema.escribir("  Juan   Pérez ")
-    assert respuestas[0] == t.BIENVENIDA_NUEVO.format(nombre="Juan")
-    assert respuestas[-2:] == [t.SIN_FINCAS, t.PEDIR_NOMBRE_FINCA]
-    [p] = sistema.consulta("SELECT * FROM productores")
-    assert (p["nombre_productor"], p["telefono_productor"], p["estado_cuenta_productor"]) == (
-        "Juan Pérez",
-        TELEFONO,
-        "ACTIVO",
-    )
-    assert p["fecha_consentimiento"] is not None and p["id_productor"].startswith("PRO-")
-    [auditoria] = sistema.consulta("SELECT * FROM auditoria WHERE accion = 'REGISTRO_PRODUCTOR'")
-    assert auditoria["origen"] == "SISTEMA" and TELEFONO not in str(auditoria) and "3001112233" not in str(auditoria)
-    assert sistema.paso() == "FINCA_NOMBRE"  # sin fincas: registra la primera desde el chat
+    assert sistema.escribir(afirmacion)[-1] == t.ELEGIR_FINCA
 
 
 def test_un_productor_del_panel_sin_consentimiento_debe_aceptar(sistema: Sistema) -> None:
@@ -619,12 +615,14 @@ def test_reiniciar_a_mitad_del_registro_de_una_finca(sistema: Sistema, orden: st
 
 
 def test_reiniciar_antes_de_aceptar_vuelve_al_aviso_de_privacidad(sistema: Sistema) -> None:
+    productor_con_finca(sistema.motor, consentimiento=False)
     sistema.escribir("hola")
-    assert sistema.escribir("reiniciar") == [t.REINICIADO, t.SALUDO, t.CONSENTIMIENTO]
+    assert sistema.escribir("reiniciar") == [t.REINICIADO, t.SALUDO_CON_NOMBRE.format(nombre="Ana"), t.CONSENTIMIENTO]
     assert sistema.paso() == "CONSENTIMIENTO"
 
 
 def test_el_saludo_explica_como_empezar_de_nuevo(sistema: Sistema) -> None:
+    productor_con_finca(sistema.motor)
     assert "REINICIAR" in sistema.escribir("hola")[0]
 
 
@@ -768,8 +766,8 @@ def test_un_mensaje_repetido_no_genera_dos_respuestas(sistema: Sistema) -> None:
 def test_otro_telefono_tiene_su_propia_conversacion(sistema: Sistema) -> None:
     productor_con_finca(sistema.motor)
     sistema.escribir("hola")
-    assert sistema.escribir("hola", telefono="573009998877") == [t.SALUDO, t.CONSENTIMIENTO]
-    assert sistema.paso() == "ELEGIR_FINCA" and sistema.paso("573009998877") == "CONSENTIMIENTO"
+    assert sistema.escribir("hola", telefono="573009998877") == [t.NO_AUTORIZADO]  # otro número, sin registrar
+    assert sistema.paso() == "ELEGIR_FINCA" and sistema.paso("573009998877") is None
 
 
 def test_un_estado_guardado_de_una_version_anterior_no_rompe(sistema: Sistema) -> None:
@@ -832,17 +830,40 @@ def test_un_deshabilitado_no_abre_casos_desde_el_menu(sistema: Sistema) -> None:
     assert sistema.pulsar("caso_nuevo") == [t.CUENTA_DESHABILITADA]
 
 
-def test_deshabilitar_a_mitad_de_la_consulta_la_deja_terminar(sistema: Sistema) -> None:
-    """Se deshabilita desde el panel cuando sea; la consulta en curso termina, pero no se abren nuevas."""
+@pytest.mark.parametrize("mensaje", ["hace una semana", "foto", "listo", "REINICIAR", "ayuda"])
+def test_deshabilitar_a_mitad_de_la_consulta_la_bloquea_desde_el_siguiente_mensaje(
+    sistema: Sistema, mensaje: str
+) -> None:
+    """RQF08/RQF27 (I-09, DF-30001, DF-30003): el cambio de estado se refleja de inmediato, en cualquier paso."""
     hasta_cuestionario(sistema, Turno(pregunta=PREGUNTA_1), Turno(completo=True))
     with sistema.motor.begin() as c:
         c.execute(sql("UPDATE productores SET estado_cuenta_productor = 'DESHABILITADO'"))
-    sistema.escribir("hace una semana")
-    sistema.foto("m1", "fruto")
-    sistema.escribir("listo")
-    assert sistema.escribir("sí")[0] == t.ENVIADO
-    assert sistema.estado_caso() == "Pendiente de revisión"
+    respuestas = sistema.foto("m1") if mensaje == "foto" else sistema.escribir(mensaje)
+    assert respuestas == [t.CUENTA_DESHABILITADA] and sistema.paso() is None
+    assert sistema.consulta("SELECT 1 FROM fotografias") == []  # no se procesó nada
+    assert sistema.estado_caso() == "En análisis"  # no llega al panel; el job de inactividad la descarta
+
+
+def test_un_deshabilitado_recibe_las_novedades_de_su_caso_ya_enviado(sistema: Sistema) -> None:
+    """Lo que ya está en el panel sigue su curso: los avisos pendientes le llegan aunque esté deshabilitado."""
+    from app.modules.panel_api.notificaciones.service import guardar_aviso_pendiente
+
+    NOTIFICACIONES.vaciar()
+    productor_con_finca(sistema.motor, activo=False)
+    guardar_aviso_pendiente(NOTIFICACIONES, "PRO-000001", "INFORME", "Informe del técnico sobre tu consulta #0026")
+    assert sistema.escribir("hola") == [
+        t.NOVEDADES,
+        "Informe del técnico sobre tu consulta #0026",
+        t.CUENTA_DESHABILITADA,
+    ]
+
+
+def test_al_reactivarlo_vuelve_a_atenderse(sistema: Sistema) -> None:
+    productor_con_finca(sistema.motor, activo=False)
     assert sistema.escribir("hola") == [t.CUENTA_DESHABILITADA]
+    with sistema.motor.begin() as c:
+        c.execute(sql("UPDATE productores SET estado_cuenta_productor = 'ACTIVO'"))
+    assert sistema.escribir("hola")[-1] == t.ELEGIR_FINCA
 
 
 @pytest.mark.parametrize("orden", ["ayuda", "/ayuda", "Comandos", "menú"])
@@ -866,9 +887,9 @@ def test_terminar_en_las_fotos_cierra_el_envio(sistema: Sistema) -> None:
     assert sistema.paso() == "CONFIRMAR_ENVIO"
 
 
-def test_si_el_productor_ya_no_existe_a_mitad_de_la_consulta_se_empieza_de_nuevo(sistema: Sistema) -> None:
-    """Antes fallaba en cada reintento (AssertionError) y el número quedaba sin respuesta."""
+def test_si_el_productor_ya_no_existe_a_mitad_de_la_consulta_se_rechaza(sistema: Sistema) -> None:
+    """Antes fallaba en cada reintento (AssertionError). Ahora el número ya no está autorizado: se le dice y listo."""
     hasta_afectacion(sistema)
     with sistema.motor.begin() as c:
         c.execute(sql("UPDATE productores SET telefono_productor = '573009999999'"))  # le cambiaron el celular
-    assert sistema.escribir("1") == [t.SALUDO, t.CONSENTIMIENTO] and sistema.paso() == "CONSENTIMIENTO"
+    assert sistema.escribir("1") == [t.NO_AUTORIZADO] and sistema.paso() is None

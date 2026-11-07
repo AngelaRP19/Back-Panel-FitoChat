@@ -8,25 +8,28 @@ y no «responde con el número». Escribir la respuesta sigue funcionando: los b
 """
 
 # --- Saludo, consentimiento y registro -----------------------------------------------------------
-SALUDO = (
-    "Hola, soy el asistente fitosanitario de la ANUC Zetaquirá. Te ayudo a describir un problema en tu cultivo para "
-    "que un técnico lo revise. Si en algún momento quieres empezar de nuevo, escribe REINICIAR; para ver los comandos, AYUDA."
+# RQF27 / RQNF07: solo los números que el líder técnico registró en el panel (RQF07) y que están activos.
+NO_AUTORIZADO = (
+    "Hola, soy el asistente fitosanitario de la ANUC Zetaquirá. Este número no está autorizado para usar el asistente. "
+    "Para usarlo, comunícate con la ANUC: un líder técnico debe registrar y autorizar tu número."
 )
 SALUDO_CON_NOMBRE = (
     "Hola {nombre}, soy el asistente fitosanitario de la ANUC Zetaquirá. Si en algún momento quieres empezar de "
     "nuevo, escribe REINICIAR; para ver los comandos, AYUDA."
 )
 # PROVISIONAL (P-B07): falta el texto aprobado del aviso de privacidad (Ley 1581 de 2012).
+# Ley 1581 de 2012, art. 26: la transferencia internacional necesita la autorización expresa del titular.
 CONSENTIMIENTO = (
     "Para atenderte necesito guardar tu nombre, tu número, los datos y la ubicación de tu finca y las fotos y "
     "respuestas de tu consulta. Solo los ve el equipo técnico de la ANUC y se borran cuando termina el plazo de "
-    "conservación. ¿Aceptas?"
+    "conservación. Tus datos se guardan en servidores de Amazon Web Services ubicados en Estados Unidos, con las "
+    "medidas de seguridad que exige la Ley 1581 de 2012. ¿Aceptas que se traten y se guarden allí?"
 )
 CONSENTIMIENTO_NEGADO = "Entendido, no guardaré nada. Si cambias de opinión, escríbeme de nuevo."
-PEDIR_NOMBRE = "Gracias. ¿Cómo te llamas? Escribe tu nombre completo."
-NOMBRE_INVALIDO = "No pude entender el nombre. Escríbelo con letras, por ejemplo: María Pérez."
-BIENVENIDA_NUEVO = "Listo, {nombre}, quedaste registrado."
-CUENTA_DESHABILITADA = "Tu cuenta está deshabilitada y no puedo abrir consultas. Comunícate con la ANUC."
+CUENTA_DESHABILITADA = (
+    "Tu cuenta está deshabilitada, así que no puedo atenderte. Si ya enviaste una consulta al técnico, él la sigue "
+    "revisando y te avisaré de sus novedades. Para reactivar tu cuenta, comunícate con la ANUC."
+)
 
 # --- Elegir o registrar la finca -----------------------------------------------------------------
 ELEGIR_FINCA = "¿Sobre qué finca es la consulta? Elige una de tus fincas o registra una nueva."
