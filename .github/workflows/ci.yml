@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
 
 permissions:
@@ -44,6 +44,20 @@ jobs:
         env:
           TEST_DATABASE_URL: postgresql+psycopg://anuc:anuc_local@localhost:5432/anuc_test
         run: pytest --cov=app --cov-report=term-missing --cov-fail-under=80
+
+  dependencias:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # I-20 (SQA): falla si una dependencia de la imagen tiene una vulnerabilidad conocida.
+      - name: pip-audit
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt --progress-spinner off
 
   imagen:
     runs-on: ubuntu-latest

@@ -18,7 +18,6 @@ from app.infrastructure.db.models import (
     Finca,
     Fotografia,
     Pregunta,
-    Productor,
     Respuesta,
 )
 
@@ -62,21 +61,6 @@ def productor_por_telefono(s: Session, telefono: str) -> ProductorFila | None:
         {"t": telefono},
     ).first()
     return ProductorFila(str(f[0]), str(f[1]), bool(f[2]), f[3]) if f else None
-
-
-def registrar_productor(s: Session, nombre: str, telefono: str) -> str:
-    """Alta desde el chatbot: ya con el consentimiento (P-B08)."""
-    hoy = s.scalar(text("SELECT (fn_ahora() AT TIME ZONE 'America/Bogota')::date"))
-    productor = Productor(
-        nombre_productor=nombre,
-        telefono_productor=telefono,
-        estado_cuenta_productor="ACTIVO",
-        fecha_registro_productor=hoy,
-        fecha_consentimiento=s.scalar(text("SELECT fn_ahora()")),
-    )
-    s.add(productor)
-    s.flush()
-    return productor.id_productor
 
 
 def dar_consentimiento(s: Session, id_productor: str) -> None:

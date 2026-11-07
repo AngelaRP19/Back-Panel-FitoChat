@@ -627,3 +627,11 @@ async def ventana_abierta(session: AsyncSession, telefono: str) -> bool:
         {"t": telefono},
     )
     return bool(abierta)
+
+
+async def productor_activo(session: AsyncSession, id_productor: str) -> bool:
+    """Si la cuenta del productor está activa (RQF08): a uno deshabilitado no se le ofrece abrir otro caso."""
+    estado = await session.scalar(
+        text("SELECT estado_cuenta_productor FROM productores WHERE id_productor = :p"), {"p": id_productor}
+    )
+    return bool(estado == "ACTIVO")
