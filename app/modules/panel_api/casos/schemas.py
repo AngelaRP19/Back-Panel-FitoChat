@@ -10,7 +10,6 @@ from app.core.catalogos_api import (
     ResultadoTecnico,
     TipoCultivo,
     TipoEvento,
-    TipoEvidencia,
 )
 
 CodigoCategoria = Literal["BOTRYTIS", "RONA", "DEFICIENCIA_MAGNESIO", "TRIPS", "FUSARIUM"]
@@ -127,7 +126,6 @@ class CoincidenciaTexto(BaseModel):
 class EvidenciasResumen(BaseModel):
     total: int = Field(description="Fotos útiles")
     maximo: int = Field(description="Máximo de fotos útiles por caso")
-    por_tipo: dict[str, int]
 
 
 class CuestionarioResumen(BaseModel):
@@ -185,8 +183,7 @@ class CasoDetalle(BaseModel):
 
 class EvidenciaOut(BaseModel):
     id: str = Field(examples=["FOT-00000001"])
-    tipo: TipoEvidencia
-    numero: int = Field(description="Número dentro de su tipo (Fruto 2)")
+    numero: int = Field(description="Orden en que llegó la foto (1, 2, 3…)")
     util: bool
     descripcion: str = Field(description="Lo que respondió el productor junto con la foto")
     pregunta: str

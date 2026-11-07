@@ -8,7 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.catalogos_api import CATEGORIAS, ESPECIES, ESTADOS_CASO, TIPOS_CULTIVO, EstadoCaso, normalizar_codigo
-from app.core.evidencias import PREGUNTA_FOTO
+from app.core.evidencias import PREGUNTA_FOTO, TIPO_FOTO
 from app.infrastructure.db import procedimientos as sp
 from app.infrastructure.db.models import (
     Caso,
@@ -297,16 +297,16 @@ def historial(s: Session, id_caso: str) -> tuple[tuple[str, str], ...]:
     return tuple((str(p), str(r)) for p, r in filas)
 
 
-def fotos_por_tipo(s: Session, id_caso: str) -> dict[str, int]:
-    filas = s.execute(
+def fotos_utiles(s: Session, id_caso: str) -> int:
+    """Cuántas fotos útiles tiene el caso (sin importar de qué parte de la planta son)."""
+    n = s.scalar(
         text(
-            "SELECT f.tipo_evidencia, count(*) FROM fotografias f JOIN respuestas r ON r.id_respuesta = f.id_respuesta "
-            "JOIN diagnosticos d ON d.id_diagnostico = r.id_diagnostico WHERE d.id_caso = :c AND f.es_util = 'S' "
-            "GROUP BY f.tipo_evidencia"
+            "SELECT count(*) FROM fotografias f JOIN respuestas r ON r.id_respuesta = f.id_respuesta "
+            "JOIN diagnosticos d ON d.id_diagnostico = r.id_diagnostico WHERE d.id_caso = :c AND f.es_util = 'S'"
         ),
         {"c": id_caso},
     )
-    return {str(t): int(n) for t, n in filas}
+    return int(n or 0)
 
 
 def rutas_de_fotos(s: Session, id_caso: str) -> list[str]:
@@ -322,12 +322,12 @@ def rutas_de_fotos(s: Session, id_caso: str) -> list[str]:
     return [str(x) for x in filas]
 
 
-def guardar_foto(s: Session, id_caso: str, tipo: str, clave: str, descripcion: str | None) -> None:
+def guardar_foto(s: Session, id_caso: str, clave: str, descripcion: str | None) -> None:
     id_respuesta = guardar_respuesta(s, id_caso, PREGUNTA_FOTO, descripcion or "Fotografía enviada")
     s.add(
         Fotografia(
             id_respuesta=id_respuesta,
-            tipo_evidencia=tipo,
+            tipo_evidencia=TIPO_FOTO,
             ruta_fotografia=clave,
             fecha_envio_fotografia=s.scalar(text("SELECT fn_ahora()")),
             es_util="S",

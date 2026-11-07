@@ -20,6 +20,7 @@ from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
 from app.core import catalogos_api as api
+from app.core.evidencias import TIPO_FOTO
 from app.infrastructure.db import procedimientos as sp
 from app.infrastructure.db import seed_demo as demo
 from app.infrastructure.db.seed_demo import MARCA
@@ -351,9 +352,9 @@ def test_las_fotos_cuelgan_de_las_respuestas_del_diagnostico_del_caso(demo_db: S
     assert huerfanas == 0
 
 
-def test_los_tipos_de_evidencia_y_una_foto_no_util(demo_db: Session) -> None:
+def test_las_fotos_no_se_clasifican_y_una_no_es_util(demo_db: Session) -> None:
     tipos = {f["tipo_evidencia"] for f in filas(demo_db, "SELECT DISTINCT tipo_evidencia FROM fotografias")}
-    assert tipos == set(api.TIPOS_EVIDENCIA.codigos)
+    assert tipos == {TIPO_FOTO}
     assert escalar(demo_db, "SELECT count(*) FROM fotografias WHERE es_util = 'N'") == 1
 
 
@@ -364,9 +365,3 @@ def test_ningun_caso_pasa_de_los_limites_de_fotos(demo_db: Session) -> None:
         "JOIN respuestas r USING (id_respuesta) JOIN diagnosticos d USING (id_diagnostico) GROUP BY 1",
     )
     assert max(f["utiles"] for f in por_caso) <= 12
-    por_tipo = filas(
-        demo_db,
-        "SELECT d.id_caso, f.tipo_evidencia, count(*) AS n FROM fotografias f JOIN respuestas r USING (id_respuesta) "
-        "JOIN diagnosticos d USING (id_diagnostico) GROUP BY 1, 2",
-    )
-    assert max(f["n"] for f in por_tipo) <= 3

@@ -88,13 +88,6 @@ class TipoEnvio(StrEnum):
     CORRECCION = "CORRECCION"
 
 
-class TipoEvidencia(StrEnum):
-    HOJA = "HOJA"
-    ENVES = "ENVES"
-    FRUTO = "FRUTO"
-    TALLO = "TALLO"
-
-
 class TipoEvento(StrEnum):
     CASO_CREADO = "CASO_CREADO"
     ANALISIS_CHATBOT = "ANALISIS_CHATBOT"
@@ -194,6 +187,5 @@ RESULTADOS_ANALISIS = Catalogo("resultado del análisis", ResultadoAnalisis)
 RESULTADOS_TECNICOS = Catalogo("resultado técnico", ResultadoTecnico)
 ESTADOS_ALERTA = Catalogo("estado de la alerta", EstadoAlerta)
 TIPOS_ENVIO = Catalogo("tipo de envío", TipoEnvio)
-TIPOS_EVIDENCIA = Catalogo("tipo de evidencia", TipoEvidencia)
 TIPOS_EVENTO = Catalogo("tipo de evento", TipoEvento)
 TIPOS_CULTIVO = Catalogo("tipo de cultivo", TipoCultivo)

@@ -207,7 +207,7 @@ def test_la_alerta_comunicada_es_de_hace_casi_un_mes_y_dentro_del_intervalo() ->
 # --- fotos sintéticas --------------------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("tipo", api.TIPOS_EVIDENCIA.codigos)
+@pytest.mark.parametrize("tipo", ["HOJA", "ENVES", "FRUTO", "TALLO"])
 def test_la_foto_demo_es_un_webp_valido_y_pequeno(tipo: str) -> None:
     contenido = demo.foto_demo(tipo)
     imagen = Image.open(io.BytesIO(contenido))
@@ -216,7 +216,7 @@ def test_la_foto_demo_es_un_webp_valido_y_pequeno(tipo: str) -> None:
 
 
 def test_cada_tipo_de_foto_se_ve_distinto() -> None:
-    assert len({demo.foto_demo(t) for t in api.TIPOS_EVIDENCIA.codigos}) == 4
+    assert len({demo.foto_demo(t) for t in ("HOJA", "ENVES", "FRUTO", "TALLO")}) == 4
 
 
 def test_la_clave_de_s3_sigue_el_formato_del_pipeline() -> None:

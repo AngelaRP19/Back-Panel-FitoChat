@@ -17,7 +17,6 @@ from sqlalchemy.orm import Session
 @dataclass(frozen=True)
 class ResultadoImagen:
     util: bool
-    tipo: str | None = None  # HOJA, ENVES, FRUTO o TALLO
     clave_s3: str | None = None
     motivo: str | None = None  # por qué se rechazó, en palabras para el productor
 
@@ -26,7 +25,7 @@ class PipelineImagenes(Protocol):
     def procesar(self, id_caso: str, media_id: str, descripcion: str | None) -> ResultadoImagen: ...
 
     def eliminar(self, clave_s3: str) -> None:
-        """Borra una foto ya guardada que al final no se usa (por ejemplo, por pasar el límite de su tipo)."""
+        """Borra una foto ya guardada que al final no se usa (por ejemplo, por pasar el límite de fotos)."""
         ...
 
 
@@ -44,21 +43,8 @@ class Identificador(Protocol):
         ...
 
 
-def tipo_de_evidencia(descripcion: str | None) -> str:
-    """El tipo sale de lo que el productor escribió junto a la foto («fruto», «tallo», «envés»…); sin pista, HOJA."""
-    texto = (descripcion or "").lower()
-    return next(
-        (
-            t
-            for clave, t in (("fruto", "FRUTO"), ("tallo", "TALLO"), ("envés", "ENVES"), ("enves", "ENVES"))
-            if clave in texto
-        ),
-        "HOJA",
-    )
-
-
 class PipelineSimulado:
-    """Acepta toda foto como útil. El tipo sale de la descripción («hoja», «fruto»…) y, si no, es HOJA. No usa S3."""
+    """Acepta toda foto como útil (salvo las de `rechazar`). No usa S3."""
 
     def __init__(self) -> None:
         self.recibidas: list[tuple[str, str]] = []
@@ -69,9 +55,7 @@ class PipelineSimulado:
         self.recibidas.append((id_caso, media_id))
         if media_id in self.rechazar:
             return ResultadoImagen(util=False, motivo=self.rechazar[media_id])
-        return ResultadoImagen(
-            util=True, tipo=tipo_de_evidencia(descripcion), clave_s3=f"simulado/{id_caso}/{media_id}.webp"
-        )
+        return ResultadoImagen(util=True, clave_s3=f"simulado/{id_caso}/{media_id}.webp")
 
     def eliminar(self, clave_s3: str) -> None:
         self.eliminadas.append(clave_s3)

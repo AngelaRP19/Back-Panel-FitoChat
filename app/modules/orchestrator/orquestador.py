@@ -32,7 +32,7 @@ from sqlalchemy.orm import Session
 from app.core.catalogos_api import CATEGORIAS, ESPECIES, EspecieCultivo, TipoCultivo, normalizar_codigo
 from app.core.codigos import codigo_caso
 from app.core.config import Settings, get_settings
-from app.core.evidencias import MAXIMO_FOTOS_POR_TIPO, MAXIMO_FOTOS_UTILES
+from app.core.evidencias import MAXIMO_FOTOS_UTILES
 from app.core.guardrail import recomienda_tratamiento
 from app.core.logging import mask_phone
 from app.infrastructure.ai_client import AiClient, ContextoConsulta, ErrorIA, con_reintentos
@@ -860,7 +860,7 @@ class Orquestador:
 
     @staticmethod
     def _pedir_fotos(d: Dialogo) -> None:
-        d.decir(t.PEDIR_FOTOS.format(por_tipo=MAXIMO_FOTOS_POR_TIPO, total=MAXIMO_FOTOS_UTILES))
+        d.decir(t.PEDIR_FOTOS.format(total=MAXIMO_FOTOS_UTILES))
         d.ir_a(Paso.FOTOS)
 
     def _fotos(self, d: Dialogo, texto: str) -> None:
@@ -868,7 +868,7 @@ class Orquestador:
         if d.m.tipo == "image":
             self._foto(d, texto)
         elif normalizar(texto) in _TERMINAR:
-            if sum(repo.fotos_por_tipo(d.s, d.conv.caso_id).values()) < 1:
+            if repo.fotos_utiles(d.s, d.conv.caso_id) < 1:
                 d.decir(t.FALTA_FOTO)
             else:
                 self._resumen(d)
@@ -877,8 +877,8 @@ class Orquestador:
 
     def _foto(self, d: Dialogo, descripcion: str) -> None:
         assert d.conv.caso_id is not None
-        por_tipo = repo.fotos_por_tipo(d.s, d.conv.caso_id)
-        if sum(por_tipo.values()) >= MAXIMO_FOTOS_UTILES:
+        guardadas = repo.fotos_utiles(d.s, d.conv.caso_id)
+        if guardadas >= MAXIMO_FOTOS_UTILES:
             d.decir(t.LIMITE_TOTAL.format(total=MAXIMO_FOTOS_UTILES))
             self._resumen(d)
             return
@@ -888,13 +888,8 @@ class Orquestador:
                 t.FOTO_RECHAZADA.format(motivo=resultado.motivo) if resultado.motivo else t.FOTO_RECHAZADA_SIN_MOTIVO
             )
             return
-        tipo = resultado.tipo or "HOJA"
-        if por_tipo.get(tipo, 0) >= MAXIMO_FOTOS_POR_TIPO:
-            self.pipeline.eliminar(resultado.clave_s3)  # ya estaba guardada: no se usa y no debe quedar huérfana
-            d.decir(con_listo(t.LIMITE_POR_TIPO.format(por_tipo=MAXIMO_FOTOS_POR_TIPO)))
-            return
-        repo.guardar_foto(d.s, d.conv.caso_id, tipo, resultado.clave_s3, descripcion or None)
-        total = sum(por_tipo.values()) + 1
+        repo.guardar_foto(d.s, d.conv.caso_id, resultado.clave_s3, descripcion or None)
+        total = guardadas + 1
         d.decir(con_listo(t.FOTO_ACEPTADA.format(n=total, total=MAXIMO_FOTOS_UTILES)))
         if total >= MAXIMO_FOTOS_UTILES:
             d.decir(t.LIMITE_TOTAL.format(total=MAXIMO_FOTOS_UTILES))
@@ -902,7 +897,7 @@ class Orquestador:
 
     def _resumen(self, d: Dialogo) -> None:
         assert d.conv.caso_id is not None
-        fotos = sum(repo.fotos_por_tipo(d.s, d.conv.caso_id).values())
+        fotos = repo.fotos_utiles(d.s, d.conv.caso_id)
         resumen = t.RESUMEN.format(
             finca=d.ctx.get("finca_nombre", ""),
             cultivo=d.ctx.get("cultivo_nombre", ""),
@@ -927,7 +922,7 @@ class Orquestador:
     def _enviar(self, d: Dialogo) -> None:
         """Pendiente de revisión solo con cuestionario completo y al menos una foto válida."""
         assert d.productor is not None and d.conv.caso_id is not None
-        if not d.ctx.get("cuestionario_completo") or sum(repo.fotos_por_tipo(d.s, d.conv.caso_id).values()) < 1:
+        if not d.ctx.get("cuestionario_completo") or repo.fotos_utiles(d.s, d.conv.caso_id) < 1:
             d.decir(t.FALTA_FOTO)
             d.ir_a(Paso.FOTOS)
             return
@@ -1004,7 +999,7 @@ class Orquestador:
         if d.conv.paso == Paso.CUESTIONARIO.value and d.ctx.get("pregunta_actual"):
             d.decir(d.ctx["pregunta_actual"])
         elif d.conv.paso == Paso.FOTOS.value:
-            d.decir(t.PEDIR_FOTOS.format(por_tipo=MAXIMO_FOTOS_POR_TIPO, total=MAXIMO_FOTOS_UTILES))
+            d.decir(t.PEDIR_FOTOS.format(total=MAXIMO_FOTOS_UTILES))
         elif d.conv.paso == Paso.CONFIRMAR_ENVIO.value:
             self._resumen(d)
 

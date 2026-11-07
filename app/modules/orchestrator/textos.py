@@ -90,13 +90,12 @@ PREGUNTA_BLOQUEADA = "Prefiero no responder eso. Un técnico de la ANUC revisar�
 
 # --- Fotos ---------------------------------------------------------------------------------------
 PEDIR_FOTOS = (
-    "Ahora envíame fotos de la planta afectada (hoja, envés, fruto o tallo). Hasta {por_tipo} por tipo y {total} en "
-    "total. Cuando termines, toca Listo o escribe LISTO."
+    "Ahora envíame fotos de la planta afectada, de cerca y con buena luz: de las partes donde se vea el problema. "
+    "Hasta {total} fotos. Cuando termines, toca Listo o escribe LISTO."
 )
 FOTO_ACEPTADA = "Recibí la foto ({n} de {total}). Puedes enviar más o tocar Listo."
 FOTO_RECHAZADA = "Esa foto no sirve: {motivo}. Envíame otra, por favor."
 FOTO_RECHAZADA_SIN_MOTIVO = "Esa foto no sirve. Envíame otra más clara y de cerca."
-LIMITE_POR_TIPO = "Ya tengo {por_tipo} fotos de ese tipo. Envía de otra parte de la planta o toca Listo."
 LIMITE_TOTAL = "Ya tengo las {total} fotos que necesito."
 FALTA_FOTO = "Necesito al menos una foto útil para continuar. Envíame una, por favor."
 SOLO_FOTOS = "En este paso solo puedo recibir fotos. Envía una foto o toca Listo."
