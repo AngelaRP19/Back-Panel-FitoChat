@@ -28,7 +28,7 @@ from app.infrastructure.notificaciones_store import NotificacionesStore, get_not
 from app.infrastructure.whatsapp_client import WhatsAppClient
 from app.modules.orchestrator.menu_que_hacer import MENU_QUE_HACER
 from app.modules.panel_api.auditoria import auditar
-from app.modules.panel_api.casos.repository import CasoFila, ventana_abierta
+from app.modules.panel_api.casos.repository import CasoFila, productor_activo, ventana_abierta
 from app.modules.panel_api.notificaciones.service import guardar_aviso_pendiente
 
 logger = logging.getLogger(__name__)
@@ -124,7 +124,8 @@ class AvisosProductor:
         datos = {"id_caso": fila.id_caso, "tipo": tipo, "celular": mask_phone(fila.telefono_productor)}
         try:
             if await ventana_abierta(self.session, fila.telefono_productor):
-                estado = await self._enviar_ya(fila, texto, datos, con_menu=tipo in CON_MENU)
+                con_menu = tipo in CON_MENU and await productor_activo(self.session, fila.id_productor)
+                estado = await self._enviar_ya(fila, texto, datos, con_menu=con_menu)
             else:
                 store = self.pendientes or get_notificaciones_store()
                 await run_in_threadpool(guardar_aviso_pendiente, store, fila.id_productor, tipo, texto)

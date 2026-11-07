@@ -194,3 +194,17 @@ def test_si_el_menu_no_sale_el_aviso_igual_queda_enviado(
     id_caso = crear_caso(migrated, mundo.cultivo1, "GULUPA", "Registrado", tecnico=mundo.t1.id)
     assert api.post(f"{URL}/{id_caso}/cierre", headers=mundo.t1.headers).status_code == 200
     assert "quedó cerrada" in textos(whatsapp)[-1] and "SIMULADO" in avisos(migrated)[-1]["descripcion"]
+
+
+def test_a_un_productor_deshabilitado_no_se_le_ofrece_abrir_otro_caso(
+    api: TestClient, mundo: Mundo, migrated: Engine, whatsapp: WhatsAppSimulado
+) -> None:
+    """RQF08: el informe le llega (su caso sigue su curso), pero sin el menú «Abrir caso nuevo»."""
+    with migrated.begin() as c:
+        c.execute(
+            text("UPDATE productores SET estado_cuenta_productor = 'DESHABILITADO' WHERE id_productor = :p"),
+            {"p": mundo.productor1["id"]},
+        )
+    id_caso = crear_caso(migrated, mundo.cultivo1, "GULUPA", "En revisión", tecnico=mundo.t1.id)
+    api.post(f"{URL}/{id_caso}/diagnostico", json={"resultado_tecnico": "NO_IDENTIFICADO"}, headers=mundo.t1.headers)
+    assert textos(whatsapp)[-1].startswith("Informe del técnico") and whatsapp.interactivos == []
