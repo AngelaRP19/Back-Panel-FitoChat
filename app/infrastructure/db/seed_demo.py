@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from app.core import catalogos_api as api
 from app.core.config import get_database_settings, get_settings
+from app.core.evidencias import TIPO_FOTO
 from app.core.logging import configure_logging
 from app.core.passwords import unusable_password_hash
 from app.core.telefonos import PREFIJO_DEMO
@@ -132,7 +133,7 @@ class CasoDemo:
     resultado: api.ResultadoTecnico | None = None
     categoria: CAT | None = None
     vence_en_dias: int | None = None  # solo casos Cerrados: días que faltan para el vencimiento
-    fotos: tuple[api.TipoEvidencia, ...] = ()
+    fotos: tuple[str, ...] = ()  # una foto por elemento; el valor solo elige su color
     advertido: bool = False
 
 
@@ -144,7 +145,8 @@ def D(n: float) -> timedelta:
     return timedelta(days=n)
 
 
-HOJA, ENVES, FRUTO, TALLO = api.TipoEvidencia
+# Solo eligen el color de la foto sintética: las fotos ya no se clasifican por parte de la planta.
+HOJA, ENVES, FRUTO, TALLO = "HOJA", "ENVES", "FRUTO", "TALLO"
 CONF = api.ResultadoTecnico.CONFIRMADO
 OTRA = api.ResultadoTecnico.OTRA_PATOLOGIA
 NOID = api.ResultadoTecnico.NO_IDENTIFICADO
@@ -250,7 +252,7 @@ class _Siembra:
         self.especies: dict[int, list[Especie]] = {}
         self.preguntas: list[Pregunta] = []
         self.subidas: list[str] = []
-        self.imagenes = {t.value: foto_demo(t.value) for t in api.TipoEvidencia}
+        self.imagenes = {t: foto_demo(t) for t in _COLORES}
         self.fotos = 0
         self.categorias = {
             c: session.scalars(
@@ -499,14 +501,14 @@ class _Siembra:
                 Fotografia(
                     id_fotografia=id_foto,
                     id_respuesta=respuestas[i % len(respuestas)].id_respuesta,
-                    tipo_evidencia=tipo.value,
+                    tipo_evidencia=TIPO_FOTO,
                     ruta_fotografia=clave,
                     fecha_envio_fotografia=enviada,
                     es_util="N" if (i == 2 and len(plan.fotos) == 3) else "S",  # una foto descartada
                 )
             )
             s.flush()
-            self.s3.subir(clave, self.imagenes[tipo.value])
+            self.s3.subir(clave, self.imagenes[tipo])
             self.subidas.append(clave)
             self.fotos += 1
 

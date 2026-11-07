@@ -27,7 +27,7 @@ from app.core.config import Settings, get_settings
 from app.infrastructure.rekognition_client import MAXIMO_BYTES, Moderador
 from app.infrastructure.s3_storage_client import S3StorageClient
 from app.infrastructure.whatsapp_client import ErrorDescargaMedia, WhatsAppClient
-from app.modules.orchestrator.puertos import ResultadoImagen, tipo_de_evidencia
+from app.modules.orchestrator.puertos import ResultadoImagen
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +128,7 @@ class PipelineReal:
         fecha = self.ahora()
         clave = f"evidencias/{fecha.year}/{fecha.month:02d}/{self.generar_id()}.webp"
         self.s3.subir(clave, a_webp(imagen), "image/webp")
-        return ResultadoImagen(util=True, tipo=tipo_de_evidencia(descripcion), clave_s3=clave)
+        return ResultadoImagen(util=True, clave_s3=clave)
 
     def eliminar(self, clave_s3: str) -> None:
         self.s3.eliminar_todas_las_versiones(clave_s3)

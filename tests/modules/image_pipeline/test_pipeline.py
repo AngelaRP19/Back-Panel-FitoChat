@@ -98,7 +98,7 @@ def entorno() -> Iterator[Entorno]:
 
 def test_una_foto_valida_se_convierte_a_webp_y_se_guarda_en_s3(entorno: Entorno) -> None:
     resultado = entorno.procesar(nitida(), "una hoja con manchas")
-    assert resultado.util and resultado.tipo == "HOJA"
+    assert resultado.util
     assert resultado.clave_s3 == "evidencias/2026/10/id1.webp"
     objeto = entorno.crudo.get_object(Bucket=BUCKET, Key=resultado.clave_s3)
     contenido = objeto["Body"].read()
@@ -106,11 +106,9 @@ def test_una_foto_valida_se_convierte_a_webp_y_se_guarda_en_s3(entorno: Entorno)
     assert Image.open(io.BytesIO(contenido)).format == "WEBP"
 
 
-def test_el_tipo_sale_de_la_descripcion(entorno: Entorno) -> None:
-    assert entorno.procesar(nitida(), "el fruto").tipo == "FRUTO"
-    assert entorno.procesar(nitida(), "mira el tallo").tipo == "TALLO"
-    assert entorno.procesar(nitida(), "el envés").tipo == "ENVES"
-    assert entorno.procesar(nitida(), None).tipo == "HOJA"
+def test_la_foto_se_acepta_sin_importar_la_descripcion(entorno: Entorno) -> None:
+    """Ya no se clasifica por parte de la planta: con o sin texto, la foto válida se guarda."""
+    assert entorno.procesar(nitida(), "el fruto").util and entorno.procesar(nitida(), None).util
 
 
 def test_cada_foto_tiene_su_propia_clave(entorno: Entorno) -> None:

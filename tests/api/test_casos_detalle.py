@@ -152,17 +152,13 @@ def test_un_caso_sin_analisis_no_tiene_preliminar(api: TestClient, mundo: Mundo,
     d = pedir(api, mundo.lider, f"{URL}/{id_caso}")
     assert d["preliminar"] is None and d["preliminar_porcentajes"] == [] and d["preliminar_resumen"] is None
     assert d["enviado_a_panel_en"] is None and d["tecnico"] is None
-    assert d["evidencias_resumen"] == {"total": 0, "maximo": 12, "por_tipo": {}}
+    assert d["evidencias_resumen"] == {"total": 0, "maximo": 12}
     assert d["cuestionario_resumen"] == {"respuestas": 0, "desde": None, "hasta": None}
 
 
 def test_los_resumenes_de_evidencias_y_cuestionario(api: TestClient, mundo: Mundo, caso: str) -> None:
     d = pedir(api, mundo.lider, f"{URL}/{caso}")
-    assert d["evidencias_resumen"] == {
-        "total": 3,
-        "maximo": 12,
-        "por_tipo": {"FRUTO": 2, "HOJA": 1},
-    }  # la foto no útil no cuenta
+    assert d["evidencias_resumen"] == {"total": 3, "maximo": 12}  # la foto no útil no cuenta; sin tipos
     assert d["cuestionario_resumen"]["respuestas"] == 2
     assert d["cuestionario_resumen"]["desde"] < d["cuestionario_resumen"]["hasta"]
     assert d["historial_ultimo"]["titulo"] == "Caso creado"  # el caso se creó directo en la base: solo tiene ese evento
@@ -262,13 +258,11 @@ def test_las_evidencias_traen_url_prefirmada_con_expiracion(
     api: TestClient, mundo: Mundo, caso: str, s3: S3StorageClient
 ) -> None:
     fotos = pedir(api, mundo.lider, f"{URL}/{caso}/evidencias")
-    assert [(f["tipo"], f["numero"], f["util"]) for f in fotos] == [
-        ("FRUTO", 1, True), ("FRUTO", 2, True), ("HOJA", 1, True), ("ENVES", 1, False),
-    ]  # fmt: skip
+    assert [(f["numero"], f["util"]) for f in fotos] == [(1, True), (2, True), (3, True), (4, False)]
+    assert "tipo" not in fotos[0]  # ya no se clasifican por parte de la planta
     primera = fotos[0]
     assert set(primera) == {
         "id",
-        "tipo",
         "numero",
         "util",
         "descripcion",

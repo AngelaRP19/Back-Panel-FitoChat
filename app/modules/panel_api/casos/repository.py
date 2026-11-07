@@ -5,7 +5,7 @@ Lo que queda fuera del alcance no se distingue de lo que no existe (`404`).
 """
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal
@@ -300,7 +300,7 @@ async def diagnostico(session: AsyncSession, id_caso: str) -> DiagnosticoFila | 
 
 @dataclass(frozen=True)
 class ResumenesCaso:
-    fotos_por_tipo: dict[str, int] = field(default_factory=dict)
+    fotos: int = 0  # fotos útiles
     respuestas: int = 0
     primera_respuesta: datetime | None = None
     ultima_respuesta: datetime | None = None
@@ -308,12 +308,12 @@ class ResumenesCaso:
 
 
 async def resumenes(session: AsyncSession, id_caso: str) -> ResumenesCaso:
-    fotos = await session.execute(
+    fotos = await session.scalar(
         text(
-            "SELECT f.tipo_evidencia, count(*) FROM fotografias f "
+            "SELECT count(*) FROM fotografias f "
             "JOIN respuestas r ON r.id_respuesta = f.id_respuesta "
             "JOIN diagnosticos d ON d.id_diagnostico = r.id_diagnostico "
-            "WHERE d.id_caso = :c AND f.es_util = 'S' GROUP BY f.tipo_evidencia"
+            "WHERE d.id_caso = :c AND f.es_util = 'S'"
         ),
         {"c": id_caso},
     )
@@ -338,7 +338,7 @@ async def resumenes(session: AsyncSession, id_caso: str) -> ResumenesCaso:
         )
     ).first()
     return ResumenesCaso(
-        fotos_por_tipo={str(t): int(n) for t, n in fotos},
+        fotos=int(fotos or 0),
         respuestas=int(cuestionario[0]),
         primera_respuesta=cuestionario[1],
         ultima_respuesta=cuestionario[2],
@@ -349,7 +349,6 @@ async def resumenes(session: AsyncSession, id_caso: str) -> ResumenesCaso:
 @dataclass(frozen=True)
 class EvidenciaFila:
     id: str
-    tipo: str
     numero: int
     util: bool
     clave: str
@@ -362,11 +361,9 @@ async def evidencias(session: AsyncSession, id_caso: str) -> list[EvidenciaFila]
     resultado = await session.execute(
         text(
             """
-            SELECT f.id_fotografia, f.tipo_evidencia, f.es_util, f.ruta_fotografia, f.fecha_envio_fotografia,
+            SELECT f.id_fotografia, f.es_util, f.ruta_fotografia, f.fecha_envio_fotografia,
                    p.texto_pregunta, r.texto_respuesta,
-                   row_number() OVER (
-                       PARTITION BY f.tipo_evidencia ORDER BY f.fecha_envio_fotografia, f.id_fotografia
-                   ) AS numero
+                   row_number() OVER (ORDER BY f.fecha_envio_fotografia, f.id_fotografia) AS numero
             FROM fotografias f
             JOIN respuestas r ON r.id_respuesta = f.id_respuesta
             JOIN preguntas p ON p.id_pregunta = r.id_pregunta
@@ -380,7 +377,6 @@ async def evidencias(session: AsyncSession, id_caso: str) -> list[EvidenciaFila]
     return [
         EvidenciaFila(
             id=r["id_fotografia"],
-            tipo=r["tipo_evidencia"],
             numero=int(r["numero"]),
             util=r["es_util"] == "S",
             clave=r["ruta_fotografia"],
