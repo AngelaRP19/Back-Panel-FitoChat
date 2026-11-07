@@ -12,7 +12,6 @@ TODOS = [
     api.RESULTADOS_TECNICOS,
     api.ESTADOS_ALERTA,
     api.TIPOS_ENVIO,
-    api.TIPOS_EVIDENCIA,
     api.TIPOS_EVENTO,
     api.TIPOS_CULTIVO,
 ]
@@ -65,7 +64,6 @@ def test_codigos_que_se_guardan_tal_cual() -> None:
     ]
     assert api.TIPOS_ENVIO.codigos == ["ALERTA", "CORRECCION"]
     assert api.TIPOS_CULTIVO.codigos == ["INVERNADERO", "CAMPO_ABIERTO"]
-    assert api.TIPOS_EVIDENCIA.codigos == ["HOJA", "ENVES", "FRUTO", "TALLO"]
     assert api.RESULTADOS_TECNICOS.codigos == ["CONFIRMADO", "OTRA_PATOLOGIA", "NO_IDENTIFICADO", "REQUIERE_VISITA"]
     assert api.RESULTADOS_ANALISIS.codigos == ["PRELIMINAR", "AMBIGUO", "NO_IDENTIFICADO"]
     assert api.ESTADOS_CUENTA.codigos == ["ACTIVO", "DESHABILITADO"]

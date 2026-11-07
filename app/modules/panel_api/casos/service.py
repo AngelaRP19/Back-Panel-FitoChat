@@ -286,9 +286,8 @@ class CasosService:
             vence_en=resumen.vence_en,
             cerrado_en=fila.fecha_cierre,
             evidencias_resumen=EvidenciasResumen(
-                total=sum(resumenes.fotos_por_tipo.values()),
+                total=resumenes.fotos,
                 maximo=MAXIMO_FOTOS_UTILES,
-                por_tipo=resumenes.fotos_por_tipo,
             ),
             cuestionario_resumen=CuestionarioResumen(
                 respuestas=resumenes.respuestas, desde=resumenes.primera_respuesta, hasta=resumenes.ultima_respuesta
@@ -308,7 +307,6 @@ class CasosService:
         return [
             EvidenciaOut(
                 id=e.id,
-                tipo=e.tipo,
                 numero=e.numero,
                 util=e.util,
                 descripcion=e.respuesta,

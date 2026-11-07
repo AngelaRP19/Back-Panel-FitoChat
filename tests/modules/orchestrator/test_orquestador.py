@@ -382,7 +382,7 @@ def test_la_ia_hace_las_preguntas_y_la_app_solo_las_envia(sistema: Sistema) -> N
     )
     assert respuestas == [t.CUESTIONARIO_INICIO, PREGUNTA_1] and sistema.paso() == "CUESTIONARIO"
     assert sistema.escribir("hace tres días") == [PREGUNTA_2]
-    assert t.PEDIR_FOTOS.format(por_tipo=3, total=12) in sistema.escribir("sí, en las nuevas")[0]
+    assert t.PEDIR_FOTOS.format(total=12) in sistema.escribir("sí, en las nuevas")[0]
     assert sistema.paso() == "FOTOS"
     historial = [
         (r["texto_pregunta"], r["texto_respuesta"])
@@ -461,7 +461,7 @@ def test_las_fotos_se_aceptan_y_se_guardan(sistema: Sistema) -> None:
     fotos = sistema.consulta(
         "SELECT tipo_evidencia AS t, es_util AS u, ruta_fotografia AS r FROM fotografias ORDER BY id_fotografia"
     )
-    assert [(f["t"], f["u"]) for f in fotos] == [("FRUTO", "S"), ("TALLO", "S")] and fotos[0]["r"].endswith("m1.webp")
+    assert [(f["t"], f["u"]) for f in fotos] == [("PLANTA", "S"), ("PLANTA", "S")] and fotos[0]["r"].endswith("m1.webp")
 
 
 def test_una_foto_rechazada_no_se_guarda_y_se_pide_otra(sistema: Sistema) -> None:
@@ -471,22 +471,23 @@ def test_una_foto_rechazada_no_se_guarda_y_se_pide_otra(sistema: Sistema) -> Non
     assert sistema.consulta("SELECT 1 FROM fotografias") == []
 
 
-def test_solo_tres_fotos_por_tipo(sistema: Sistema) -> None:
+def test_las_fotos_no_se_clasifican_por_parte_de_la_planta(sistema: Sistema) -> None:
+    """Ya no hay límite por hoja, envés, fruto o tallo: cinco fotos de hojas se aceptan todas."""
     a_fotos(sistema)
-    for n in range(3):
-        assert "Recibí la foto" in sistema.foto(f"h{n}", "hoja")[0]
-    cuarta = sistema.foto("h4", "hoja")
-    assert cuarta == [t.LIMITE_POR_TIPO.format(por_tipo=3)] and len(sistema.consulta("SELECT 1 FROM fotografias")) == 3
-    [eliminada] = sistema.pipeline.eliminadas  # la foto de más ya estaba guardada: no debe quedar huérfana
-    assert eliminada.endswith("/h4.webp")
-    assert "Recibí la foto" in sistema.foto("f1", "fruto")[0]  # otro tipo sí
+    for n in range(5):
+        assert sistema.foto(f"h{n}", "hoja") == [t.FOTO_ACEPTADA.format(n=n + 1, total=12)]
+    assert len(sistema.consulta("SELECT 1 FROM fotografias")) == 5 and sistema.pipeline.eliminadas == []
+
+
+def test_el_pedido_de_fotos_no_habla_de_tipos() -> None:
+    for palabra in ("envés", "tallo", "por tipo"):
+        assert palabra not in t.PEDIR_FOTOS.lower()
 
 
 def test_con_doce_fotos_utiles_se_pasa_solo_al_resumen(sistema: Sistema) -> None:
     a_fotos(sistema)
-    for tipo in ("hoja", "fruto", "tallo", "envés"):
-        for n in range(3):
-            respuestas = sistema.foto(f"{tipo}{n}", tipo)
+    for n in range(12):
+        respuestas = sistema.foto(f"m{n}")
     assert t.LIMITE_TOTAL.format(total=12) in respuestas and "Resumen de tu consulta" in junto(respuestas)
     assert sistema.paso() == "CONFIRMAR_ENVIO" and len(sistema.consulta("SELECT 1 FROM fotografias")) == 12
 
