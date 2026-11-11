@@ -147,6 +147,17 @@ def test_busca_por_nombre_o_correo_sin_importar_tildes_ni_mayusculas(
     assert buscar("zzz") == set()
 
 
+def test_busca_por_celular_como_se_escriba(api: TestClient, nueva_cuenta: NuevaCuenta, lider: Cuenta) -> None:
+    """RQF13: el celular se busca por sus dígitos, con o sin espacios ni indicativo."""
+    nueva_cuenta(Rol.TECNICO, 1, nombre="Técnico A", celular="3001112233")
+    nueva_cuenta(Rol.TECNICO, 2, nombre="Técnico B", celular="3204445566")
+    buscar = lambda q: {c["nombre"] for c in api.get(URL, params={"q": q}, headers=lider.headers).json()["items"]}  # noqa: E731
+    assert buscar("3204445566") == {"Técnico B"}
+    assert buscar("320 444 5566") == {"Técnico B"} and buscar("+57 320 444 5566") == {"Técnico B"}
+    assert buscar("4455") == {"Técnico B"} and buscar("111") == {"Técnico A"}
+    assert buscar("3999999999") == set()
+
+
 def test_la_busqueda_no_es_inyectable(api: TestClient, lider: Cuenta) -> None:
     for q in ("'; DROP TABLE tecnicos; --", "%", "_", "\\"):
         assert api.get(URL, params={"q": q}, headers=lider.headers).status_code == 200

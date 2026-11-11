@@ -10,7 +10,7 @@ from collections.abc import Callable
 from typing import Any
 
 from app.core.config import get_database_settings, get_settings
-from app.infrastructure.ai_client import AnalisisIA, ContextoConsulta, ErrorIA, Turno
+from app.infrastructure.ai_client import AnalisisIA, ContextoConsulta, ErrorIA, Turno, VerificacionEspecie
 from app.infrastructure.ia_credenciales import ProveedorClientesIA, get_proveedor_ia
 
 SISTEMA_CUESTIONARIO = """Eres un asistente fitosanitario de la ANUC Zetaquirá que conversa por WhatsApp con \
@@ -44,6 +44,19 @@ def extraer_json(texto: str) -> dict[str, Any]:
     if not isinstance(datos, dict):
         raise ErrorIA("La respuesta de la IA no es un objeto")
     return datos
+
+
+SISTEMA_ESPECIE = (
+    "Eres un agrónomo que revisa fotos que envían campesinos de Zetaquirá (Boyacá, Colombia) para un diagnóstico "
+    "fitosanitario de gulupa, granadilla y maracuyá, todas del género Passiflora (pasifloras). Debes decir si la foto "
+    "muestra una planta de Passiflora o alguna de sus partes: hojas (trilobuladas en gulupa y maracuyá, enteras y "
+    "acorazonadas en granadilla), tallos, zarcillos, flores o frutos, aunque estén enfermos, manchados, secos, dañados "
+    "por plagas o fotografiados muy de cerca. REGLAS: (1) Responde false si se ve claramente otra especie (por ejemplo "
+    "café, plátano, rosa, maíz, papa, fríjol, cítricos, tomate, pasto u ornamentales) o si no hay ninguna planta. "
+    "(2) Si la foto muestra una Passiflora o si no puedes descartarlo con seguridad, responde true: la decisión final "
+    "es del técnico. (3) Responde SOLO con un objeto JSON: "
+    '{"es_passiflora": true/false, "que_se_ve": "planta o cosa que se ve, en pocas palabras"}.'
+)
 
 
 def _formato_imagen(datos: bytes) -> str:
@@ -137,6 +150,17 @@ class BedrockAi:
                 "descartan": [str(x) for x in valor.get("descartan", []) if isinstance(x, str)],
             }
         return AnalisisIA(porcentajes, detalle, str(datos.get("explicacion", "")).strip())
+
+    def verificar_especie(self, imagen: bytes) -> VerificacionEspecie:
+        contenido: list[dict[str, Any]] = [
+            {"text": "¿Esta foto muestra una planta de Passiflora (gulupa, granadilla o maracuyá)?"},
+            {"image": {"format": _formato_imagen(imagen), "source": {"bytes": imagen}}},
+        ]
+        datos = extraer_json(self._converse(self._vision, SISTEMA_ESPECIE, contenido, 150))
+        valor = datos.get("es_passiflora")
+        if not isinstance(valor, bool):
+            raise ErrorIA("La IA no dijo si la foto es de una Passiflora")
+        return VerificacionEspecie(valor, str(datos.get("que_se_ve", "")).strip()[:80])
 
     def embedding(self, texto: str) -> list[float]:
         try:

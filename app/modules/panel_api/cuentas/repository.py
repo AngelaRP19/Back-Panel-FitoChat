@@ -1,5 +1,6 @@
 """SQL de las cuentas del panel: líderes (`lideres_tecnicos`) y técnicos (`tecnicos`) juntos o por rol."""
 
+import re
 import unicodedata
 from dataclasses import dataclass
 from datetime import date
@@ -198,8 +199,14 @@ async def listar(
     condiciones = ["TRUE"]
     parametros: dict[str, object] = {"limite": pagina.page_size, "desplazamiento": pagina.offset}
     if q and normalizar_busqueda(q):
-        condiciones.append("translate(lower(nombre || ' ' || correo), 'áéíóúüñ', 'aeiouun') LIKE :q")
+        por_texto = "translate(lower(nombre || ' ' || correo), 'áéíóúüñ', 'aeiouun') LIKE :q"
         parametros["q"] = f"%{normalizar_busqueda(q)}%"
+        digitos = re.sub(r"\D", "", q)
+        if len(digitos) >= 3:  # RQF13: un número se busca también en el celular, solo con sus dígitos
+            condiciones.append(f"({por_texto} OR regexp_replace(celular, '\\D', '', 'g') LIKE :q_celular)")
+            parametros["q_celular"] = f"%{digitos}%"
+        else:
+            condiciones.append(por_texto)
     if rol is not None:
         condiciones.append("rol = :rol")
         parametros["rol"] = rol.value
@@ -260,3 +267,12 @@ async def cambiar_estado(session: AsyncSession, cuenta: CuentaFila, activo: bool
 
 async def correo_existe(session: AsyncSession, correo: str) -> bool:
     return await correo_registrado(session, correo)
+
+
+async def cuenta_activa_por_correo(session: AsyncSession, correo: str) -> bool | None:
+    """None si ninguna cuenta tiene ese correo; si no, si está activa (RQF06)."""
+    activo = await session.scalar(
+        text(f"WITH {_CUENTAS_CTE} SELECT activo FROM cuentas WHERE lower(correo) = :c LIMIT 1"),
+        {"c": correo.lower()},
+    )
+    return None if activo is None else bool(activo)

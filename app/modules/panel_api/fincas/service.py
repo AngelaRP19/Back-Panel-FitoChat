@@ -18,7 +18,7 @@ from app.api.paginacion import ParametrosPagina
 from app.core.catalogos_api import normalizar_codigo
 from app.core.security_cognito import UsuarioActual
 from app.modules.panel_api.auditoria import auditar
-from app.modules.panel_api.cuentas.repository import bloquear
+from app.modules.panel_api.cuentas.repository import bloquear, normalizar_busqueda
 from app.modules.panel_api.fincas import repository as repo
 from app.modules.panel_api.fincas.repository import CultivoFila, FiltrosFincas, FincaFila
 from app.modules.panel_api.fincas.schemas import CultivoEditar, CultivoEnFincaEditar, CultivoIn, FincaEditar, FincaIn
@@ -116,6 +116,7 @@ class FincasService:
             "longitud": datos.longitud if datos.longitud not in (None, float(actual.longitud)) else None,
         }
         planes = self._planear_cultivos(actual, datos.cultivos or [])
+        self._rechazar_nombres_repetidos(actual, planes)
         await self._rechazar_especies_en_uso(planes)
         planes = [p for p in planes if not p.sin_cambios]
         if all(v is None for v in cambios.values()) and not planes:
@@ -131,7 +132,7 @@ class FincasService:
         )
         for plan in planes:
             await repo.actualizar_cultivo(
-                self.session, plan.cultivo, nombre=None, tipo=plan.tipo, agregar=plan.agregar, quitar=plan.quitar
+                self.session, plan.cultivo, nombre=plan.nombre, tipo=plan.tipo, agregar=plan.agregar, quitar=plan.quitar
             )
         anterior: dict[str, Any] = {
             "nombre": cambios["nombre"] and actual.nombre,
@@ -163,8 +164,24 @@ class FincasService:
             cultivo = por_id.get(edicion.id)
             if cultivo is None:
                 raise validacion({f"cultivos.{edicion.id}": "El cultivo no pertenece a esta finca."})
-            planes.append(self._plan(cultivo, None, edicion.tipo, edicion.especies))
+            nombre = " ".join(edicion.nombre.split()) if edicion.nombre is not None else None
+            planes.append(self._plan(cultivo, nombre, edicion.tipo, edicion.especies))
         return planes
+
+    @staticmethod
+    def _rechazar_nombres_repetidos(finca: FincaFila, planes: list[PlanCultivo]) -> None:
+        """RQF18: el nombre del cultivo se edita junto con la finca; dos cultivos de la finca no se llaman igual."""
+        nombres = {c.id: c.nombre for c in finca.cultivos}
+        nombres.update({p.cultivo.id: p.nombre for p in planes if p.nombre})
+        for plan in planes:
+            otros = {normalizar_busqueda(n) for i, n in nombres.items() if i != plan.cultivo.id}
+            if plan.nombre and normalizar_busqueda(plan.nombre) in otros:
+                raise ApiError(
+                    409,
+                    "DUPLICADO",
+                    "Hay datos que ya están registrados.",
+                    {f"cultivos.{plan.cultivo.id}.nombre": _NOMBRE_CULTIVO_REPETIDO["nombre"]},
+                )
 
     @staticmethod
     def _plan(cultivo: CultivoFila, nombre: str | None, tipo: str | None, especies: list[Any] | None) -> PlanCultivo:

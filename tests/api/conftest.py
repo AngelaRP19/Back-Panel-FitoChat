@@ -24,7 +24,7 @@ from app.infrastructure.documentos_store import _ARCHIVOS_EN_MEMORIA as ARCHIVOS
 from app.infrastructure.documentos_store import _EN_MEMORIA as DOCUMENTOS_EN_MEMORIA
 from app.infrastructure.notificaciones_store import _EN_MEMORIA as NOTIFICACIONES_EN_MEMORIA
 from app.main import app
-from app.modules.panel_api.cuentas.router_auth import LIMITADOR_VERIFICAR_CORREO
+from app.modules.panel_api.cuentas.router_auth import LIMITADOR_SOLICITAR_CODIGO, LIMITADOR_VERIFICAR_CORREO
 from tests.conftest import _sesion_por_solicitud, con_token
 from tests.db_fixtures import reiniciar_secuencias_cortas
 
@@ -71,6 +71,7 @@ def api(migrated: Engine, cognito: CognitoSimulado) -> Iterator[TestClient]:
     app.dependency_overrides[get_session] = _sesion_por_solicitud
     app.dependency_overrides[get_cognito_admin] = lambda: cognito
     LIMITADOR_VERIFICAR_CORREO.reiniciar()
+    LIMITADOR_SOLICITAR_CODIGO.reiniciar()
     with TestClient(app, raise_server_exceptions=False) as cliente:
         yield cliente
     app.dependency_overrides.clear()
@@ -167,6 +168,10 @@ class CognitoQueFalla(CognitoSimulado):
     def actualizar_atributos(self, correo: str, **kwargs: Any) -> None:
         self._revisar("actualizar")
         super().actualizar_atributos(correo, **kwargs)
+
+    def solicitar_recuperacion(self, correo: str) -> str:
+        self._revisar("recuperar")
+        return super().solicitar_recuperacion(correo)
 
     def cambiar_contrasena(self, access_token: str, actual: str, nueva: str) -> None:
         self._revisar("cambiar_contrasena")

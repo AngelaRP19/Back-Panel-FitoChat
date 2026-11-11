@@ -150,3 +150,23 @@ def test_sin_modelos_configurados_no_arranca(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(bedrock_client, "get_settings", lambda: sin_modelos)
     with pytest.raises(RuntimeError, match="BEDROCK_MODEL"):
         bedrock_client.get_bedrock_ai()
+
+
+@pytest.mark.parametrize(("respuesta", "esperado"), [(True, True), (False, False)])
+def test_verificar_especie_usa_el_modelo_de_vision(respuesta: bool, esperado: bool) -> None:
+    runtime = RuntimeFalso(json.dumps({"es_passiflora": respuesta, "que_se_ve": "hoja de café"}))
+    jpeg = b"\xff\xd8\xff\xe0datos"
+    resultado = _ia(runtime).verificar_especie(jpeg)
+    assert resultado.es_passiflora is esperado and resultado.que_se_ve == "hoja de café"
+    llamada = runtime.converse_llamadas[0]
+    assert llamada["modelId"] == "modelo-vision"
+    assert llamada["messages"][0]["content"][1] == {"image": {"format": "jpeg", "source": {"bytes": jpeg}}}
+    assert (
+        "Passiflora" in llamada["system"][0]["text"] and "decisión final es del técnico" in llamada["system"][0]["text"]
+    )
+
+
+@pytest.mark.parametrize("texto", ['{"que_se_ve": "algo"}', '{"es_passiflora": "tal vez"}', "no sé"])
+def test_verificar_especie_sin_respuesta_clara_es_error_ia(texto: str) -> None:
+    with pytest.raises(ErrorIA):
+        _ia(RuntimeFalso(texto)).verificar_especie(b"\xff\xd8\xff")
