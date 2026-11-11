@@ -362,6 +362,36 @@ def test_edita_tipo_y_especies_de_sus_cultivos_en_el_mismo_patch(
     assert (cultivo["tipo"], cultivo["especies"]) == ("INVERNADERO", ["GRANADILLA", "GULUPA"])
 
 
+def test_edita_el_nombre_de_un_cultivo_desde_la_finca(
+    api: TestClient, lider: Cuenta, una_finca: dict[str, Any], migrated: Engine
+) -> None:
+    """RQF18: el chatbot ofrece el cultivo con su nombre nuevo en el siguiente caso."""
+    id_cultivo = una_finca["cultivos"][0]["id"]
+    r = api.patch(
+        f"{URL}/{una_finca['id']}",
+        json={"cultivos": [{"id": id_cultivo, "nombre": "  Lote   Norte ", "especies": ["GULUPA", "MARACUYA"]}]},
+        headers=lider.headers,
+    )
+    assert r.status_code == 200 and r.json()["cultivos"][0]["nombre"] == "Lote Norte"
+    [fila] = consultar(migrated, "SELECT nombre_cultivo FROM cultivos WHERE id_cultivo = :c", c=id_cultivo)
+    assert fila["nombre_cultivo"] == "Lote Norte"
+
+
+def test_el_nombre_editado_no_puede_repetir_otro_cultivo_de_la_finca(
+    api: TestClient, lider: Cuenta, catalogos: None
+) -> None:
+    p = crear_productor(api, lider)
+    finca = crear_finca(api, lider, p["id"])
+    crear_cultivo(api, lider, finca["id"], "Lote Único")
+    finca = crear_cultivo(api, lider, finca["id"], "Lote 2")
+    id_segundo = next(c["id"] for c in finca["cultivos"] if c["nombre"] == "Lote 2")
+    r = api.patch(
+        f"{URL}/{finca['id']}", json={"cultivos": [{"id": id_segundo, "nombre": "lote unico"}]}, headers=lider.headers
+    )
+    assert r.status_code == 409
+    assert r.json()["campos"] == {f"cultivos.{id_segundo}.nombre": "Esta finca ya tiene un cultivo con ese nombre"}
+
+
 def test_un_cultivo_ajeno_a_la_finca_se_rechaza(api: TestClient, lider: Cuenta, una_finca: dict[str, Any]) -> None:
     r = api.patch(
         f"{URL}/{una_finca['id']}",

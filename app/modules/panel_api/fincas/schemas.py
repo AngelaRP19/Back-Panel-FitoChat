@@ -52,6 +52,7 @@ class CultivoEnFincaEditar(BaseModel):
     """Cultivo de la finca que se edita junto con ella (el formulario del panel guarda todo en un PATCH)."""
 
     id: str = Field(examples=["CUL-000001"])
+    nombre: Nombre | None = None
     tipo: TipoCultivo | None = None
     especies: Especies | None = None
 

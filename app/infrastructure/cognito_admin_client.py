@@ -67,15 +67,22 @@ class CognitoAdmin(Protocol):
 
     def cambiar_contrasena(self, access_token: str, actual: str, nueva: str) -> None: ...
 
+    def solicitar_recuperacion(self, correo: str) -> str:
+        """RQF06. Envía al correo el código para crear una contraseña nueva y devuelve `CODIGO`. Si la cuenta aún tiene
+        la contraseña temporal (nunca entró), Cognito no permite recuperarla: reenvía la temporal y devuelve
+        `CONTRASENA_TEMPORAL`."""
+        ...
+
 
 def _a_cognito_telefono(celular_e164: str) -> str:
     return celular_e164 if celular_e164.startswith("+") else f"+{celular_e164}"
 
 
 class CognitoReal:
-    def __init__(self, client: Any, user_pool_id: str) -> None:
+    def __init__(self, client: Any, user_pool_id: str, client_id: str = "") -> None:
         self._client = client
         self._pool = user_pool_id
+        self._client_id = client_id
 
     def _llamar(self, operacion: str, **kwargs: Any) -> Any:
         try:
@@ -156,6 +163,24 @@ class CognitoReal:
     def cambiar_contrasena(self, access_token: str, actual: str, nueva: str) -> None:
         self._llamar("change_password", PreviousPassword=actual, ProposedPassword=nueva, AccessToken=access_token)
 
+    def solicitar_recuperacion(self, correo: str) -> str:
+        usuario = self._llamar("admin_get_user", UserPoolId=self._pool, Username=correo)
+        if usuario.get("UserStatus") == "FORCE_CHANGE_PASSWORD":
+            self._llamar(
+                "admin_create_user",
+                UserPoolId=self._pool,
+                Username=correo,
+                MessageAction="RESEND",
+                DesiredDeliveryMediums=["EMAIL"],
+            )
+            return "CONTRASENA_TEMPORAL"
+        respuesta = self._llamar("forgot_password", ClientId=self._client_id, Username=correo)
+        logger.info(  # el destino ya viene enmascarado por Cognito (a***@g***)
+            "Código de recuperación enviado",
+            extra={"destino": respuesta.get("CodeDeliveryDetails", {}).get("Destination")},
+        )
+        return "CODIGO"
+
 
 @dataclass
 class _UsuarioSimulado:
@@ -165,6 +190,7 @@ class _UsuarioSimulado:
     celular: str
     habilitado: bool = True
     contrasena: str | None = None
+    recuperaciones: int = 0
 
 
 class CognitoSimulado:
@@ -236,6 +262,11 @@ class CognitoSimulado:
             raise ContrasenaNoValida
         usuario.contrasena = nueva
 
+    def solicitar_recuperacion(self, correo: str) -> str:
+        usuario = self._usuario(correo)
+        usuario.recuperaciones += 1
+        return "CONTRASENA_TEMPORAL" if usuario.contrasena is None else "CODIGO"
+
     # --- ayudas para las pruebas ---------------------------------------------------------------------------------
     def existe(self, correo: str) -> bool:
         return correo.lower() in self._por_correo
@@ -255,7 +286,7 @@ def _cognito_real() -> CognitoReal:
         region_name=settings.cognito_region or settings.aws_region,
         config=Config(retries={"max_attempts": 3, "mode": "standard"}, connect_timeout=3, read_timeout=10),
     )
-    return CognitoReal(cliente, settings.cognito_user_pool_id or "")
+    return CognitoReal(cliente, settings.cognito_user_pool_id or "", settings.cognito_app_client_id or "")
 
 
 def get_cognito_admin() -> CognitoAdmin:

@@ -8,7 +8,7 @@ deshace lo que ya se hizo en Cognito. Toda acción de cuenta se audita (D-09), s
 import json
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.exc import IntegrityError
@@ -24,6 +24,7 @@ from app.infrastructure.cognito_admin_client import (
     ContrasenaActualIncorrecta,
     ContrasenaNoValida,
     ErrorCognito,
+    UsuarioNoExiste,
     UsuarioYaExiste,
 )
 from app.infrastructure.db import procedimientos as sp
@@ -41,6 +42,7 @@ logger = logging.getLogger(__name__)
 
 _ORIGEN = {Rol.LIDER_TECNICO: "LIDER", Rol.TECNICO: "TECNICO"}
 _MENSAJE_DUPLICADO = "Hay datos que ya están registrados."
+_CUENTA_INEXISTENTE = "No hay ninguna cuenta registrada con este correo"
 _MENSAJE_SERVICIO = "No pudimos completar la operación con el servicio de identidad. Intenta de nuevo."
 _CAMPO_DE_RESTRICCION = {
     "uq_tec_correo": "correo",
@@ -194,6 +196,33 @@ class CuentasService:
 
     async def correo_registrado(self, correo: str) -> bool:
         return await repo.correo_registrado(self.session, correo)
+
+    async def solicitar_recuperacion(self, correo: str) -> Literal["CODIGO", "CONTRASENA_TEMPORAL"]:
+        """RQF06: sin cuenta no se envía nada y se dice; con cuenta, Cognito envía el código (o la contraseña temporal
+        si la cuenta nunca entró: Cognito no deja recuperar una cuenta en ese estado)."""
+        activa = await repo.cuenta_activa_por_correo(self.session, correo)
+        if activa is None:
+            raise ApiError(404, "CUENTA_INEXISTENTE", _CUENTA_INEXISTENTE, {"correo": _CUENTA_INEXISTENTE})
+        if not activa:
+            raise ApiError(
+                409,
+                "CUENTA_DESHABILITADA",
+                "Tu cuenta está deshabilitada. Pide al líder técnico que la habilite.",
+                {"correo": "Esta cuenta está deshabilitada"},
+            )
+        try:
+            envio = await run_in_threadpool(self.cognito.solicitar_recuperacion, correo)
+            return "CONTRASENA_TEMPORAL" if envio == "CONTRASENA_TEMPORAL" else "CODIGO"
+        except UsuarioNoExiste:
+            logger.error("La cuenta está en la base pero no en Cognito")
+            raise ApiError(503, "ERROR_INTERNO", _MENSAJE_SERVICIO) from None
+        except ErrorCognito as error:
+            if str(error) == "LimitExceededException":
+                raise ApiError(
+                    429, "DEMASIADAS_SOLICITUDES", "Pediste demasiados códigos. Espera unos minutos e intenta de nuevo."
+                ) from None
+            logger.error("Cognito no envió el código de recuperación", extra={"detalle": str(error)})
+            raise ApiError(503, "ERROR_INTERNO", _MENSAJE_SERVICIO) from None
 
     # --- Mi cuenta ---------------------------------------------------------------------------------------------------
 

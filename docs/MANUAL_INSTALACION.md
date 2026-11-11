@@ -156,8 +156,12 @@ llamada.
 ### 4.1 Registros
 
 Logs JSON en CloudWatch (`/ecs/anuc-backend`), con identificador de correlación y sin datos personales (los celulares
-van enmascarados). Mensajes útiles: «Respuesta enviada», «Acceso al chatbot rechazado», «Foto rechazada»,
-«Meta no entregó un mensaje», «No se pudo procesar el mensaje».
+van enmascarados). Mensajes útiles: «Respuesta enviada», «Acceso al chatbot rechazado», «Foto rechazada», «Foto de otra
+especie» (con lo que vio el modelo de visión), «Código de recuperación enviado», «Cognito no envió el código de
+recuperación», «Meta no entregó un mensaje», «No se pudo procesar el mensaje».
+
+Las fotos pasan dos filtros de IA: Rekognition (contenido inapropiado y si es una planta) y el modelo de visión de
+Bedrock (`BEDROCK_MODEL_VISION`), que rechaza las que muestran claramente otra especie y no una Passiflora.
 
 ### 4.2 Alarmas (tema SNS `anuc-alarmas`)
 
@@ -185,6 +189,7 @@ el enlace que llega.
 |---|---|---|
 | El panel muestra «Servicio no disponible» | La API no tiene tareas sanas | Ver eventos del servicio en ECS y los logs |
 | El productor no recibe respuesta | Su número no está registrado o está deshabilitado (recibe un aviso), o el mensaje está en la cola de fallidos | Revisar el productor en el panel y la alarma `anuc-dlq-mensajes` |
+| Un usuario del panel no recibe el código de recuperación | Spam, límite diario del correo por defecto de Cognito (50) o la cuenta nunca entró | Buscar «Código de recuperación enviado» o «Cognito no envió…» en los logs; para más volumen, configurar SES en el User Pool |
 | Llegan avisos tarde | Fuera de la ventana de 24 h de WhatsApp: quedan pendientes hasta que el productor escriba | Normal sin plantillas aprobadas por Meta |
 | `alembic` no encuentra la base | `DATABASE_URL` o `DB_*` mal definidas | Revisar `.env` o la definición de la tarea |
 | En Windows, `/api/v1/me` falla en local | Falta `--reload` en `uvicorn` | Ver `README.md` |

@@ -72,6 +72,14 @@ class AnalisisIA:
     explicacion: str = ""
 
 
+@dataclass(frozen=True)
+class VerificacionEspecie:
+    """RQF38 / RQNF17: si la foto muestra una Passiflora (gulupa, granadilla, maracuyá) y qué se ve si no."""
+
+    es_passiflora: bool
+    que_se_ve: str = ""
+
+
 class AiClient(Protocol):
     def conducir(self, contexto: ContextoConsulta, mensaje: str | None) -> Turno:
         """`mensaje` responde a `contexto.pregunta_pendiente`; es None al iniciar el cuestionario."""
@@ -87,6 +95,10 @@ class AiClient(Protocol):
         """Vector del texto para buscar en `conocimiento_embeddings`."""
         ...
 
+    def verificar_especie(self, imagen: bytes) -> VerificacionEspecie:
+        """Si la foto es de una planta del género Passiflora; si se ve claramente otra especie, no lo es."""
+        ...
+
 
 @dataclass
 class AiSimulado:
@@ -98,6 +110,7 @@ class AiSimulado:
     turnos: deque[Turno] = field(default_factory=deque)
     llamadas: list[tuple[ContextoConsulta, str | None]] = field(default_factory=list)
     analisis: AnalisisIA | None = None  # lo que devolverá `analizar`; sin programar, no concluye nada
+    otras_especies: set[bytes] = field(default_factory=set)  # fotos que `verificar_especie` rechaza
     dimension: int = 8
 
     def conducir(self, contexto: ContextoConsulta, mensaje: str | None) -> Turno:
@@ -111,6 +124,11 @@ class AiSimulado:
 
     def embedding(self, texto: str) -> list[float]:
         return [0.0] * self.dimension
+
+    def verificar_especie(self, imagen: bytes) -> VerificacionEspecie:
+        if imagen in self.otras_especies:
+            return VerificacionEspecie(False, "otra planta")
+        return VerificacionEspecie(True)
 
 
 _SIMULADO = AiSimulado()
