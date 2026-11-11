@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 
 from app.core.roles import Rol
-from app.infrastructure.cognito_admin_client import get_cognito_admin
+from app.infrastructure.cognito_admin_client import CognitoSimulado, get_cognito_admin
 from app.main import app
 from app.modules.panel_api.cuentas import service as servicio
 from app.modules.panel_api.cuentas.router_auth import LIMITADOR_VERIFICAR_CORREO
@@ -280,3 +280,59 @@ def test_el_limite_no_afecta_a_otros_endpoints(api: TestClient) -> None:
     for _ in range(7):
         verificar(api, "a@anuc.org")
     assert api.get(f"{URL}/estado").status_code == 200
+
+
+# --- POST /auth/recuperacion/solicitar-codigo (RQF06) ------------------------------------------------------------
+
+
+def solicitar(api: TestClient, correo: str) -> httpx.Response:
+    return api.post(f"{URL}/recuperacion/solicitar-codigo", json={"correo": correo})
+
+
+def test_con_cuenta_cognito_envia_el_codigo(
+    api: TestClient, nueva_cuenta: NuevaCuenta, cognito: CognitoSimulado
+) -> None:
+    nueva_cuenta(Rol.LIDER_TECNICO, correo="luis@anuc.org")
+    cognito.obtener("luis@anuc.org").contrasena = "Clave1234"  # ya entró alguna vez
+    r = solicitar(api, "  LUIS@anuc.org ")
+    assert r.status_code == 200 and r.json() == {"envio": "CODIGO"}
+    assert cognito.obtener("luis@anuc.org").recuperaciones == 1
+
+
+def test_sin_cuenta_no_se_envia_nada_y_se_dice(api: TestClient, cognito: CognitoSimulado) -> None:
+    r = solicitar(api, "nadie@anuc.org")
+    assert r.status_code == 404
+    cuerpo = r.json()
+    assert cuerpo["codigo"] == "CUENTA_INEXISTENTE"
+    assert cuerpo["campos"] == {"correo": "No hay ninguna cuenta registrada con este correo"}
+    assert not cognito.existe("nadie@anuc.org")
+
+
+def test_una_cuenta_que_nunca_entro_recibe_otra_vez_la_contrasena_temporal(
+    api: TestClient, nueva_cuenta: NuevaCuenta, cognito: CognitoSimulado
+) -> None:
+    """Cognito no deja recuperar una cuenta con la contraseña temporal: se la reenvía."""
+    nueva_cuenta(Rol.TECNICO, correo="ana@anuc.org")
+    assert solicitar(api, "ana@anuc.org").json() == {"envio": "CONTRASENA_TEMPORAL"}
+    assert cognito.obtener("ana@anuc.org").recuperaciones == 1
+
+
+def test_una_cuenta_deshabilitada_no_se_recupera(
+    api: TestClient, nueva_cuenta: NuevaCuenta, cognito: CognitoSimulado
+) -> None:
+    nueva_cuenta(Rol.TECNICO, correo="ana@anuc.org", activo=False)
+    r = solicitar(api, "ana@anuc.org")
+    assert r.status_code == 409 and r.json()["codigo"] == "CUENTA_DESHABILITADA"
+    assert cognito.obtener("ana@anuc.org").recuperaciones == 0
+
+
+def test_si_cognito_falla_responde_503(api: TestClient, nueva_cuenta: NuevaCuenta) -> None:
+    nueva_cuenta(Rol.TECNICO, correo="ana@anuc.org")
+    app.dependency_overrides[get_cognito_admin] = lambda: CognitoQueFalla("recuperar")
+    assert solicitar(api, "ana@anuc.org").status_code == 503
+
+
+def test_solicitar_codigo_tiene_limite_por_ip(api: TestClient, nueva_cuenta: NuevaCuenta) -> None:
+    nueva_cuenta(Rol.TECNICO, correo="ana@anuc.org")
+    respuestas = [solicitar(api, "ana@anuc.org").status_code for _ in range(6)]
+    assert respuestas[:5] == [200] * 5 and respuestas[5] == 429

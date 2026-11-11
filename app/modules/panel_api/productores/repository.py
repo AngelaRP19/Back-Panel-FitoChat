@@ -137,7 +137,7 @@ async def listar(
         por_nombre = f"{sin_tildes('nombre')} LIKE :q"
         parametros["q"] = f"%{busqueda}%"
         if len(digitos) >= 3:  # un número se busca en el celular, tal como lo teclea quien consulta
-            condiciones.append(f"({por_nombre} OR celular LIKE :q_celular)")
+            condiciones.append(f"({por_nombre} OR regexp_replace(celular, '\\D', '', 'g') LIKE :q_celular)")
             parametros["q_celular"] = f"%{digitos}%"
         else:
             condiciones.append(por_nombre)

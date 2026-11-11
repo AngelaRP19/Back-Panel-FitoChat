@@ -173,7 +173,7 @@ def construir_orquestador(settings: Settings) -> Orquestador:
     if settings.integracion_ia == "real":
         if s3 is None:
             raise RuntimeError("Con la IA real hace falta S3_BUCKET_EVIDENCIAS")
-        pipeline = PipelineReal(whatsapp, get_moderador(), s3, settings)
+        pipeline = PipelineReal(whatsapp, get_moderador(), s3, settings, verificador=ai.verificar_especie)
         identificador = IdentificadorIA(ai, s3, settings)
     return Orquestador(get_conversaciones_store(), whatsapp, ai, pipeline, identificador, s3, settings)
 

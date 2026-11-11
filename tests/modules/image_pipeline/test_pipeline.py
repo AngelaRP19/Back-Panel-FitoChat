@@ -12,6 +12,7 @@ from moto import mock_aws
 from PIL import Image
 
 from app.core.config import Settings, get_settings
+from app.infrastructure.ai_client import ErrorIA, VerificacionEspecie
 from app.infrastructure.rekognition_client import ErrorModeracion, ModeradorSimulado, ResultadoModeracion
 from app.infrastructure.s3_storage_client import S3StorageClient
 from app.infrastructure.whatsapp_client import WhatsAppSimulado
@@ -234,3 +235,56 @@ def test_eliminar_borra_todas_las_versiones(entorno: Entorno) -> None:
     assert len(entorno.s3.listar_versiones(clave)) == 2
     entorno.pipeline.eliminar(clave)
     assert entorno.s3.listar_versiones(clave) == [] and entorno.claves() == []
+
+
+# --- Especie (RQF38, RQNF17) ---------------------------------------------------------------------------------------
+
+
+class VerificadorFalso:
+    def __init__(self, es_passiflora: bool = True, error: Exception | None = None) -> None:
+        self.es_passiflora, self.error = es_passiflora, error
+        self.recibidas: list[bytes] = []
+
+    def __call__(self, imagen: bytes) -> VerificacionEspecie:
+        self.recibidas.append(imagen)
+        if self.error:
+            raise self.error
+        return VerificacionEspecie(self.es_passiflora, "planta de café")
+
+
+def _con_verificador(entorno: Entorno, verificador: VerificadorFalso) -> Entorno:
+    entorno.pipeline.verificador = verificador
+    return entorno
+
+
+def test_una_foto_de_otra_especie_se_rechaza_y_no_se_guarda(entorno: Entorno) -> None:
+    verificador = VerificadorFalso(es_passiflora=False)
+    resultado = _con_verificador(entorno, verificador).procesar(nitida())
+    assert not resultado.util and resultado.motivo == pl.MOTIVO_OTRA_ESPECIE
+    assert "gulupa, granadilla ni maracuyá" in pl.MOTIVO_OTRA_ESPECIE
+    assert entorno.claves() == [] and len(verificador.recibidas) == 1
+
+
+def test_una_passiflora_se_guarda_y_al_modelo_va_un_jpeg_reducido(entorno: Entorno) -> None:
+    verificador = VerificadorFalso()
+    grande = _bytes(tablero(3000, 2000), quality=90)
+    assert _con_verificador(entorno, verificador).procesar(grande).util
+    [enviada] = verificador.recibidas
+    imagen = Image.open(io.BytesIO(enviada))
+    assert imagen.format == "JPEG" and max(imagen.size) == pl.LADO_ESPECIE
+
+
+def test_la_especie_se_revisa_despues_de_rekognition(entorno: Entorno) -> None:
+    """Lo que ni siquiera es una planta no gasta una llamada al modelo de visión."""
+    verificador = VerificadorFalso()
+    auto = nitida()
+    entorno.moderador.no_plantas.add(auto)
+    assert _con_verificador(entorno, verificador).procesar(auto).motivo == pl.MOTIVO_NO_PLANTA
+    assert verificador.recibidas == []
+
+
+def test_si_el_modelo_de_vision_falla_la_excepcion_sube_para_reintentar(entorno: Entorno) -> None:
+    verificador = VerificadorFalso(error=ErrorIA("Bedrock no respondió"))
+    with pytest.raises(ErrorIA):
+        _con_verificador(entorno, verificador).procesar(nitida())
+    assert entorno.claves() == []

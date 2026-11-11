@@ -1,5 +1,5 @@
 import re
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
@@ -71,6 +71,13 @@ class VerificarCorreoIn(BaseModel):
 
 class VerificarCorreoOut(BaseModel):
     existe: bool
+
+
+class SolicitarCodigoOut(BaseModel):
+    envio: Literal["CODIGO", "CONTRASENA_TEMPORAL"] = Field(
+        description="CODIGO: llegó el código para crear una contraseña nueva. CONTRASENA_TEMPORAL: la cuenta nunca "
+        "entró y Cognito no permite recuperarla; se reenvió la contraseña temporal."
+    )
 
 
 # --- Mi cuenta -----------------------------------------------------------------------------------------------------

@@ -6,6 +6,8 @@ Orden y por qué:
    se valida **antes** de convertirlo a WebP.
 3. **Calidad** (brillo y nitidez), con umbrales de la configuración. Son provisionales: se validan con el técnico.
 4. **Moderación y dominio** con Rekognition: sin contenido inapropiado y que sea una planta o un cultivo.
+4b. **Especie** con el modelo de visión (RQF38, RQNF17): Rekognition reconoce plantas, pero no el género. Una foto que
+   muestra claramente otra especie (café, plátano, una rosa…) se rechaza; ante la duda se acepta y decide el técnico.
 5. **WebP**: se corrige la orientación y se reescribe sin metadatos (la ubicación y el modelo del teléfono, EXIF,
    no se guardan), con el lado mayor limitado.
 6. **S3** en `evidencias/<año>/<mes>/<id>.webp`.
@@ -24,6 +26,7 @@ from zoneinfo import ZoneInfo
 from PIL import Image, ImageFilter, ImageOps, ImageStat, UnidentifiedImageError
 
 from app.core.config import Settings, get_settings
+from app.infrastructure.ai_client import VerificacionEspecie
 from app.infrastructure.rekognition_client import MAXIMO_BYTES, Moderador
 from app.infrastructure.s3_storage_client import S3StorageClient
 from app.infrastructure.whatsapp_client import ErrorDescargaMedia, WhatsAppClient
@@ -35,6 +38,7 @@ BOGOTA = ZoneInfo("America/Bogota")
 LADO_MAXIMO = 1600
 CALIDAD_WEBP = 80
 LADO_ANALISIS = 512  # para medir nitidez y brillo no hace falta la foto entera
+LADO_ESPECIE = 1024  # basta para reconocer hojas y frutos, y abarata la llamada al modelo de visión
 
 MOTIVO_DESCARGA = "no pude descargarla"
 MOTIVO_FORMATO = "debe ser una foto normal (JPG o PNG)"
@@ -44,6 +48,7 @@ MOTIVO_CLARA = "tiene demasiada luz"
 MOTIVO_BORROSA = "salió borrosa"
 MOTIVO_INAPROPIADA = "no es una imagen apropiada"
 MOTIVO_NO_PLANTA = "no se ve una planta o un fruto de tu cultivo"
+MOTIVO_OTRA_ESPECIE = "parece de otra planta, no de gulupa, granadilla ni maracuyá"
 
 
 def nitidez(gris: Image.Image) -> float:
@@ -77,6 +82,7 @@ class PipelineReal:
         ajustes: Settings | None = None,
         ahora: Callable[[], datetime] = lambda: datetime.now(BOGOTA),
         generar_id: Callable[[], str] = lambda: uuid.uuid4().hex,
+        verificador: Callable[[bytes], VerificacionEspecie] | None = None,
     ) -> None:
         self.whatsapp = whatsapp
         self.moderador = moderador
@@ -84,6 +90,7 @@ class PipelineReal:
         self.ajustes = ajustes or get_settings()
         self.ahora = ahora
         self.generar_id = generar_id
+        self.verificador = verificador
 
     def procesar(self, id_caso: str, media_id: str, descripcion: str | None) -> ResultadoImagen:
         resultado = self._procesar(id_caso, media_id, descripcion)
@@ -124,6 +131,11 @@ class PipelineReal:
             return _rechazo(MOTIVO_INAPROPIADA)
         if not moderacion.es_planta:
             return _rechazo(MOTIVO_NO_PLANTA)
+        if self.verificador is not None:  # si la IA falla, la excepción sube y el consumidor reintenta
+            especie = self.verificador(_para_ia(imagen))
+            if not especie.es_passiflora:
+                logger.info("Foto de otra especie", extra={"id_caso": id_caso, "que_se_ve": especie.que_se_ve})
+                return _rechazo(MOTIVO_OTRA_ESPECIE)
 
         fecha = self.ahora()
         clave = f"evidencias/{fecha.year}/{fecha.month:02d}/{self.generar_id()}.webp"
@@ -132,6 +144,15 @@ class PipelineReal:
 
     def eliminar(self, clave_s3: str) -> None:
         self.s3.eliminar_todas_las_versiones(clave_s3)
+
+
+def _para_ia(imagen: Image.Image) -> bytes:
+    """JPEG reducido, orientado y sin metadatos: lo que se envía al modelo de visión."""
+    copia = (ImageOps.exif_transpose(imagen) or imagen).convert("RGB")
+    copia.thumbnail((LADO_ESPECIE, LADO_ESPECIE))
+    salida = io.BytesIO()
+    copia.save(salida, "JPEG", quality=85)
+    return salida.getvalue()
 
 
 def _rechazo(motivo: str) -> ResultadoImagen:
