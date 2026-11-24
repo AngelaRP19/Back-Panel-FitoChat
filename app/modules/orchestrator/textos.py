@@ -98,6 +98,11 @@ PEDIR_FOTOS = (
 )
 FOTO_ACEPTADA = "Recibí la foto ({n} de {total}). Puedes enviar más o tocar Listo."
 FOTO_RECHAZADA = "Esa foto no sirve: {motivo}. Envíame otra, por favor."
+# Toque en los botones o la lista de un mensaje anterior que ya se respondió (WhatsApp no deja desactivarlos).
+FORMULARIO_RESPONDIDO = (
+    "Esa opción es de un mensaje anterior que ya respondiste, así que no la tomé en cuenta. "
+    "Responde con las opciones del último mensaje que te envié."
+)
 FOTO_RECHAZADA_SIN_MOTIVO = "Esa foto no sirve. Envíame otra más clara y de cerca."
 LIMITE_TOTAL = "Ya tengo las {total} fotos que necesito."
 FALTA_FOTO = "Necesito al menos una foto útil para continuar. Envíame una, por favor."
