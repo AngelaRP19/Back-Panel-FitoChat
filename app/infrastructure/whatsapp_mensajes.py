@@ -8,7 +8,7 @@ Límites de Meta que se respetan aquí (se recortan, no se rechazan): hasta 3 bo
 listas de hasta 10 filas con títulos de 24 y descripciones de 72; texto del botón de la lista de 20.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 MAXIMO_BOTONES = 3
@@ -144,6 +144,25 @@ class Ubicacion:
 
 Interactivo = Botones | Lista | PedirUbicacion | Ubicacion
 Mensaje = str | Interactivo
+
+
+SEPARADOR_MARCA = "~"
+
+
+def con_marca(mensaje: Mensaje, marca: str) -> Mensaje:
+    """El mismo formulario con la marca en el id de cada opción (`CASO_NUEVO~a1b2c3`). Solo botones y listas: son
+    los que el productor puede volver a tocar cuando ya los respondió."""
+    if not isinstance(mensaje, Botones | Lista):
+        return mensaje
+    opciones = tuple(replace(o, id=f"{o.id}{SEPARADOR_MARCA}{marca}") for o in mensaje.opciones)
+    return replace(mensaje, opciones=opciones)
+
+
+def separar_marca(id_opcion: str) -> tuple[str, str | None]:
+    """(id de la opción, marca del formulario) de una respuesta; marca None si el id no la trae (avisos del panel o
+    mensajes enviados antes de que existieran las marcas)."""
+    base, separador, marca = id_opcion.rpartition(SEPARADOR_MARCA)
+    return (base, marca) if separador and base and marca else (id_opcion, None)
 
 
 def texto_de(mensaje: Mensaje) -> str:

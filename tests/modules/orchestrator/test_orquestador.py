@@ -12,7 +12,7 @@ from app.infrastructure.ai_client import Turno
 from app.infrastructure.db.models import LiderTecnico
 from app.infrastructure.notificaciones_store import _EN_MEMORIA as NOTIFICACIONES
 from app.infrastructure.whatsapp_client import FALLIDO, ResultadoEnvio
-from app.infrastructure.whatsapp_mensajes import Botones, Lista, PedirUbicacion, Ubicacion
+from app.infrastructure.whatsapp_mensajes import Botones, Lista, PedirUbicacion, Ubicacion, separar_marca
 from app.modules.orchestrator import textos as t
 from app.modules.orchestrator.puertos import Identificacion
 from tests.modules.orchestrator.conftest import (
@@ -113,6 +113,66 @@ def test_un_productor_sin_fincas_registra_la_primera(sistema: Sistema) -> None:
     assert sistema.paso() == "FINCA_NOMBRE"
 
 
+def sin_marca(id_opcion: str) -> str:
+    """El id de la opción sin la marca del formulario (ver `test_formularios_ya_respondidos`)."""
+    return separar_marca(id_opcion)[0]
+
+
+# --- formularios ya respondidos (WhatsApp no deja desactivar los botones de un mensaje enviado) -----------------------
+
+
+def test_cada_formulario_lleva_la_marca_de_su_envio(sistema: Sistema) -> None:
+    productor_con_finca(sistema.motor)
+    sistema.escribir("hola")
+    lista = sistema.ultimo_interactivo()
+    marcas = {separar_marca(o.id)[1] for o in lista.opciones}
+    assert len(marcas) == 1 and None not in marcas
+    assert sistema.store.obtener(TELEFONO).formulario == marcas.pop()
+
+
+def test_pulsar_el_formulario_vigente_avanza(sistema: Sistema) -> None:
+    productor_con_finca(sistema.motor)
+    sistema.escribir("hola")
+    fila = sistema.ultimo_interactivo().opciones[0]
+    assert sistema.pulsar(fila.id) == [t.ELEGIR_CULTIVO.format(finca="La Esperanza")]
+    assert sistema.paso() == "ELEGIR_CULTIVO"
+
+
+def test_pulsar_un_formulario_ya_respondido_no_cambia_nada(sistema: Sistema) -> None:
+    """El productor ya eligió la finca y luego toca otra vez la lista de fincas: se le avisa y el paso no cambia."""
+    productor_con_finca(sistema.motor)
+    sistema.escribir("hola")
+    fincas = sistema.ultimo_interactivo()
+    sistema.pulsar(fincas.opciones[0].id)  # responde la lista de fincas
+    assert sistema.paso() == "ELEGIR_CULTIVO"
+    vieja = fincas.opciones[-1].id  # «Registrar finca nueva» del mensaje anterior
+    assert sistema.pulsar(vieja) == [t.FORMULARIO_RESPONDIDO]
+    assert sistema.paso() == "ELEGIR_CULTIVO"  # sigue esperando el lote
+    lotes = sistema.ultimo_interactivo()
+    assert sistema.pulsar(lotes.opciones[0].id) == [t.PEDIR_AFECTACION]  # el formulario vigente sí sirve
+
+
+def test_un_toque_viejo_despues_de_reiniciar_tampoco_cuenta(sistema: Sistema) -> None:
+    productor_con_finca(sistema.motor)
+    sistema.escribir("hola")
+    vieja = sistema.ultimo_interactivo().opciones[0].id
+    sistema.store.borrar(TELEFONO)  # p. ej. venció la conversación
+    assert sistema.pulsar(vieja) == [t.FORMULARIO_RESPONDIDO]
+
+
+def test_un_id_sin_marca_se_sigue_aceptando(sistema: Sistema) -> None:
+    """Los botones del panel (avisos) y los mensajes enviados antes de las marcas no la traen."""
+    productor_con_finca(sistema.motor)
+    sistema.escribir("hola")
+    assert sistema.pulsar("1") == [t.ELEGIR_CULTIVO.format(finca="La Esperanza")]
+
+
+def test_escribir_el_numero_sigue_funcionando(sistema: Sistema) -> None:
+    productor_con_finca(sistema.motor)
+    sistema.escribir("hola")
+    assert sistema.escribir("1") == [t.ELEGIR_CULTIVO.format(finca="La Esperanza")]
+
+
 # --- finca: elegir o registrar --------------------------------------------------------------------------------------
 
 
@@ -121,13 +181,13 @@ def test_las_fincas_se_muestran_en_una_lista_con_la_opcion_de_registrar(sistema:
     assert sistema.escribir("hola")[-1] == t.ELEGIR_FINCA and sistema.paso() == "ELEGIR_FINCA"
     lista = sistema.ultimo_interactivo()
     assert isinstance(lista, Lista) and lista.boton == t.VER_FINCAS
-    assert [(o.id, o.titulo, o.descripcion) for o in lista.opciones] == [
+    assert [(sin_marca(o.id), o.titulo, o.descripcion) for o in lista.opciones] == [
         ("1", "La Esperanza", "Centro"),
         ("nueva", t.FILA_FINCA_NUEVA, t.DESCRIPCION_FINCA_NUEVA),
     ]
     assert sistema.pulsar("1") == [t.ELEGIR_CULTIVO.format(finca="La Esperanza")]
     lotes = sistema.ultimo_interactivo()
-    assert [(o.id, o.titulo, o.descripcion) for o in lotes.opciones] == [
+    assert [(sin_marca(o.id), o.titulo, o.descripcion) for o in lotes.opciones] == [
         ("1", "Lote 1", "Gulupa"),
         ("nuevo", t.FILA_LOTE_NUEVO, t.DESCRIPCION_LOTE_NUEVO),
     ]
@@ -161,7 +221,7 @@ def test_registrar_una_finca_con_su_ubicacion(sistema: Sistema) -> None:
         -73.1689,
         "La Primavera",
     )
-    assert isinstance(pregunta, Botones) and [o.id for o in pregunta.opciones] == ["si", "otra"]
+    assert isinstance(pregunta, Botones) and [sin_marca(o.id) for o in pregunta.opciones] == ["si", "otra"]
     assert respuestas[-1] == t.CONFIRMAR_UBICACION.format(nombre="La Primavera")
     assert sistema.pulsar("otra") == [t.OTRA_UBICACION, pedido] and sistema.paso() == "FINCA_UBICACION"
     sistema.ubicacion(5.2712, -73.1702)
@@ -188,7 +248,7 @@ def test_una_finca_nueva_se_registra_aunque_ya_tenga_otras(sistema: Sistema) -> 
     assert sistema.pulsar("nueva") == [t.PEDIR_NOMBRE_FINCA]
     sistema.escribir("Finca Dos")
     veredas = sistema.ultimo_interactivo()
-    assert isinstance(veredas, Lista) and [o.id for o in veredas.opciones] == ["1", "otra"]
+    assert isinstance(veredas, Lista) and [sin_marca(o.id) for o in veredas.opciones] == ["1", "otra"]
     assert sistema.pulsar("otra") == [t.ESCRIBE_VEREDA] and sistema.paso() == "FINCA_VEREDA"
     sistema.escribir("CENTRO")  # la misma vereda escrita de otra forma: se usa la guardada
     sistema.ubicacion()
@@ -244,7 +304,7 @@ def test_un_lote_se_registra_con_la_ubicacion_tomada_dentro_de_el(sistema: Siste
     sistema.pulsar("1")
     especies = sistema.ultimo_interactivo()
     assert isinstance(especies, Lista) and len(especies.opciones) == 7  # cada combinación de las tres especies
-    assert ("1,3", "Gulupa y maracuyá") in [(o.id, o.titulo) for o in especies.opciones]
+    assert ("1,3", "Gulupa y maracuyá") in [(sin_marca(o.id), o.titulo) for o in especies.opciones]
     assert sistema.escribir("ninguna")[0] == t.ESPECIES_INVALIDAS and sistema.paso() == "CULTIVO_ESPECIES"
     pedido = t.PEDIR_UBICACION_LOTE.format(lote="Lote Norte")
     assert sistema.pulsar("1,3") == [pedido] and sistema.paso() == "CULTIVO_UBICACION"
@@ -321,7 +381,7 @@ def test_los_avisos_pendientes_llegan_cuando_el_productor_escribe(sistema: Siste
         "Tu consulta #0026 ya tiene técnico.",
     ]
     assert respuestas[-1] == t.QUE_HACER and sistema.paso() == "QUE_HACER"  # y se le pregunta qué sigue
-    assert sistema.ultimo_interactivo().opciones[0].id == "caso_nuevo"  # con botones, no con números
+    assert sin_marca(sistema.ultimo_interactivo().opciones[0].id) == "caso_nuevo"  # con botones, no con números
     respuestas = sistema.escribir("1")  # «Abrir caso nuevo» también por su número
     assert t.NOVEDADES not in respuestas and respuestas[-1] == t.ELEGIR_FINCA  # se entregan una sola vez
 

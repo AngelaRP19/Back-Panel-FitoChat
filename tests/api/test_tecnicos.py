@@ -605,6 +605,31 @@ def test_vuelve_a_habilitarlo(
     assert r.json()["activo"] is True and cognito.obtener(ana.correo).habilitado
 
 
+def test_una_cuenta_de_demostracion_sin_usuario_en_cognito_se_deshabilita_y_habilita(
+    api: TestClient, lider: Cuenta, nueva_cuenta: NuevaCuenta, migrated: Engine, cognito: CognitoSimulado
+) -> None:
+    """Las cuentas de seed_demo existen solo en la base: antes el cambio de estado respondía 503."""
+    demo = nueva_cuenta(Rol.TECNICO, 1, correo="tecnico1@demo.anuc.test")
+    nueva_cuenta(Rol.TECNICO, 2)
+    cognito.eliminar_usuario(demo.correo)
+    r = estado(api, lider, demo.id, False)
+    assert r.status_code == 200 and r.json()["activo"] is False
+    sql = "SELECT estado_cuenta_tecnico AS e FROM tecnicos WHERE id_tecnico = :i"
+    assert consultar(migrated, sql, i=demo.id)[0]["e"] == "DESHABILITADO"
+    assert [a["accion"] for a in auditoria_de(migrated)] == ["CAMBIAR_ESTADO"]
+    assert estado(api, lider, demo.id, True).json()["activo"] is True
+    assert consultar(migrated, sql, i=demo.id)[0]["e"] == "ACTIVO"
+
+
+def test_una_cuenta_de_demostracion_sin_usuario_en_cognito_se_edita(
+    api: TestClient, lider: Cuenta, nueva_cuenta: NuevaCuenta, cognito: CognitoSimulado
+) -> None:
+    demo = nueva_cuenta(Rol.TECNICO, 1, correo="tecnico1@demo.anuc.test")
+    cognito.eliminar_usuario(demo.correo)
+    r = api.patch(f"{URL}/{demo.id}", json={"nombre": "Técnico Demo"}, headers=lider.headers)
+    assert r.status_code == 200 and r.json()["nombre"] == "Técnico Demo"
+
+
 def test_habilitar_una_cuenta_ya_habilitada_es_idempotente(
     api: TestClient, lider: Cuenta, nueva_cuenta: NuevaCuenta, migrated: Engine
 ) -> None:

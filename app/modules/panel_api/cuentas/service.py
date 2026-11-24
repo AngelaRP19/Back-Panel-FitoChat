@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 
 _ORIGEN = {Rol.LIDER_TECNICO: "LIDER", Rol.TECNICO: "TECNICO"}
 _MENSAJE_DUPLICADO = "Hay datos que ya están registrados."
+SIN_USUARIO_COGNITO = object()  # la cuenta existe en la base pero no en Cognito (datos de demostración)
 _CUENTA_INEXISTENTE = "No hay ninguna cuenta registrada con este correo"
 _MENSAJE_SERVICIO = "No pudimos completar la operación con el servicio de identidad. Intenta de nuevo."
 _CAMPO_DE_RESTRICCION = {
@@ -64,11 +65,26 @@ class CuentasService:
     # --- Cognito -----------------------------------------------------------------------------------------------------
 
     async def _cognito(
-        self, funcion: Callable[..., Any], *args: Any, campo_clave: str = "password", **kwargs: Any
+        self,
+        funcion: Callable[..., Any],
+        *args: Any,
+        campo_clave: str = "password",
+        tolerar_inexistente: bool = False,
+        **kwargs: Any,
     ) -> Any:
-        """Llama a Cognito en un hilo y traduce sus errores al formato de la API."""
+        """Llama a Cognito en un hilo y traduce sus errores al formato de la API.
+
+        Con `tolerar_inexistente`, una cuenta sin usuario en Cognito (las de demostración se crean solo en la base) no
+        es un error: devuelve `SIN_USUARIO_COGNITO` y el cambio se hace solo en la base. Esa cuenta no puede iniciar
+        sesión de todas formas."""
         try:
             return await run_in_threadpool(funcion, *args, **kwargs)
+        except UsuarioNoExiste:
+            if tolerar_inexistente:
+                logger.warning("La cuenta no tiene usuario en Cognito: el cambio se hace solo en la base")
+                return SIN_USUARIO_COGNITO
+            logger.error("La cuenta no tiene usuario en Cognito")
+            raise ApiError(503, "ERROR_INTERNO", _MENSAJE_SERVICIO) from None
         except UsuarioYaExiste:
             raise duplicado({"correo": "Este correo ya está registrado"}) from None
         except ContrasenaNoValida:
@@ -330,15 +346,21 @@ class CuentasService:
             {k: v for k, v in anterior.items() if v},
             {k: v for k, v in nuevo.items() if v},
         )
-        await self._cognito(
-            self.cognito.actualizar_atributos,
-            cuenta.correo,
-            nombre=nuevo_nombre,
-            celular_e164=nuevo_celular,
-            correo_nuevo=nuevo_correo,
+        en_cognito = (
+            await self._cognito(
+                self.cognito.actualizar_atributos,
+                cuenta.correo,
+                nombre=nuevo_nombre,
+                celular_e164=nuevo_celular,
+                correo_nuevo=nuevo_correo,
+                tolerar_inexistente=True,
+            )
+            is not SIN_USUARIO_COGNITO
         )
 
         async def deshacer() -> None:
+            if not en_cognito:
+                return
             await self._deshacer(
                 self.cognito.actualizar_atributos,
                 nuevo_correo or cuenta.correo,
@@ -365,10 +387,11 @@ class CuentasService:
             if activo
             else (self.cognito.deshabilitar, self.cognito.habilitar)
         )
-        await self._cognito(operacion, cuenta.correo)
+        en_cognito = await self._cognito(operacion, cuenta.correo, tolerar_inexistente=True) is not SIN_USUARIO_COGNITO
 
         async def deshacer() -> None:
-            await self._deshacer(inversa, cuenta.correo)
+            if en_cognito:
+                await self._deshacer(inversa, cuenta.correo)
 
         try:
             await repo.cambiar_estado(self.session, cuenta, activo)
