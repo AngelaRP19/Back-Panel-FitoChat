@@ -24,6 +24,9 @@ class Conversacion:
     caso_id: str | None = None
     contexto: dict[str, Any] = field(default_factory=dict)
     ultima_actividad: float = field(default_factory=time.time)  # segundos desde la época
+    # Marca del último formulario (botones o lista) enviado: un toque en un formulario anterior ya respondido trae otra
+    # marca y no se toma como respuesta (WhatsApp no permite desactivar los botones de un mensaje ya enviado).
+    formulario: str | None = None
 
 
 class ConversacionesStore(Protocol):
@@ -69,6 +72,7 @@ class ConversacionesDynamoDB:
             caso_id=item.get("caso_id", {}).get("S"),
             contexto=json.loads(item.get("contexto", {}).get("S", "{}")),
             ultima_actividad=float(item["ultima_actividad"]["N"]),
+            formulario=item.get("formulario", {}).get("S"),
         )
 
     def guardar(self, conversacion: Conversacion) -> None:
@@ -81,6 +85,8 @@ class ConversacionesDynamoDB:
         }
         if conversacion.caso_id:
             item["caso_id"] = {"S": conversacion.caso_id}
+        if conversacion.formulario:
+            item["formulario"] = {"S": conversacion.formulario}
         self._cliente.put_item(TableName=self._tabla, Item=item)
 
     def borrar(self, telefono: str) -> None:

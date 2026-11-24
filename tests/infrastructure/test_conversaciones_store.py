@@ -125,3 +125,11 @@ def test_con_tabla_se_usa_dynamodb(monkeypatch: pytest.MonkeyPatch) -> None:
         usar(monkeypatch, dynamodb_tabla_conversaciones=TABLA, aws_endpoint_url=None)
         assert isinstance(get_conversaciones_store(), ConversacionesDynamoDB)
         get_conversaciones_store.cache_clear()
+
+
+def test_guarda_la_marca_del_ultimo_formulario(almacen: Any) -> None:
+    conv = Conversacion("573001112233", "ELEGIR_FINCA", formulario="a1b2c3")
+    almacen.guardar(conv)
+    assert almacen.obtener("573001112233").formulario == "a1b2c3"
+    almacen.guardar(Conversacion("573001112233", "INICIO"))  # sin formulario: no queda la marca vieja
+    assert almacen.obtener("573001112233").formulario is None

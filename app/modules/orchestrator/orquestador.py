@@ -17,6 +17,7 @@ nada fuera de la base; pide esos efectos con `Efectos`, que `aplicar` ejecuta de
 import logging
 import math
 import re
+import secrets
 import time
 import unicodedata
 from collections.abc import Callable
@@ -48,6 +49,8 @@ from app.infrastructure.whatsapp_mensajes import (
     Opcion,
     PedirUbicacion,
     Ubicacion,
+    con_marca,
+    separar_marca,
     texto_de,
 )
 from app.modules.consumer.efectos import Efectos
@@ -212,12 +215,18 @@ class Dialogo:
     conv: Conversacion
     productor: repo.ProductorFila | None
     ef: Efectos
+    marca: str | None = None  # la de los formularios de este turno: todos comparten una y el anterior queda viejo
 
     @property
     def ctx(self) -> dict[str, Any]:
         return self.conv.contexto
 
     def decir(self, mensaje: Mensaje) -> None:
+        if isinstance(mensaje, Botones | Lista):
+            if self.marca is None:
+                self.marca = secrets.token_hex(3)
+                self.conv.formulario = self.marca
+            mensaje = con_marca(mensaje, self.marca)
         self.ef.respuestas.append(mensaje)
 
     def ir_a(self, paso: Paso) -> None:
@@ -286,7 +295,14 @@ class Orquestador:
         hubo_novedades = self._entregar_avisos_pendientes(d)  # un deshabilitado también recibe las de su caso
         if d.productor is None or not d.productor.activo:  # RQF27/RQNF07/RQF08: se verifica en cada mensaje
             return self._rechazar(d)
-        texto = self._texto(m)
+        texto, marca = self._texto(m), None
+        if m.tipo in {"interactive", "button"}:
+            texto, marca = separar_marca(texto)
+        if marca is not None and marca != conv.formulario:  # un formulario ya respondido: no cambia nada
+            logger.info("Toque en un formulario ya respondido", extra={"paso": conv.paso})
+            d.decir(t.FORMULARIO_RESPONDIDO)
+            d.ef.conversacion = d.conv
+            return d.ef
 
         if conv.caso_id and repo.caso_abierto(s, conv.caso_id) is None:  # lo descartó el job de 72 h o ya no existe
             d.decir(t.CONSULTA_VENCIDA)

@@ -12,6 +12,8 @@ from app.infrastructure.whatsapp_mensajes import (
     Opcion,
     PedirUbicacion,
     Ubicacion,
+    con_marca,
+    separar_marca,
     texto_de,
     texto_visible,
 )
@@ -128,3 +130,29 @@ def test_a_los_numeros_de_demostracion_nunca_sale_un_mensaje_real() -> None:
     resultado = cliente.enviar_texto("573000000001", "Hola")
     assert resultado.estado == SIMULADO and "demostración" in (resultado.error or "") and vistas == []
     assert cliente.enviar_interactivo("573000000002", PedirUbicacion("x")).estado == SIMULADO and vistas == []
+
+
+def test_con_marca_cambia_solo_los_ids_de_botones_y_listas() -> None:
+    botones = con_marca(Botones("¿Continuar?", SI_NO), "a1b2c3")
+    assert isinstance(botones, Botones)
+    assert [o.id for o in botones.opciones] == ["si~a1b2c3", "no~a1b2c3"]
+    assert [o.titulo for o in botones.opciones] == ["Sí", "No"]  # lo que ve el productor no cambia
+    lista = con_marca(Lista("Elige", "Ver", (Opcion("1", "Finca 1"),)), "ff")
+    assert isinstance(lista, Lista) and lista.opciones[0].id == "1~ff"
+    assert con_marca("texto", "ff") == "texto"
+    pedir = PedirUbicacion("Envía tu ubicación")
+    assert con_marca(pedir, "ff") is pedir
+
+
+@pytest.mark.parametrize(
+    ("id_opcion", "esperado"),
+    [
+        ("si~a1b2c3", ("si", "a1b2c3")),
+        ("1,3~ff", ("1,3", "ff")),
+        ("caso_nuevo", ("caso_nuevo", None)),
+        ("~ff", ("~ff", None)),
+        ("si~", ("si~", None)),
+    ],
+)
+def test_separar_marca(id_opcion: str, esperado: tuple[str, str | None]) -> None:
+    assert separar_marca(id_opcion) == esperado
